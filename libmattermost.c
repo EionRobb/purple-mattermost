@@ -129,7 +129,7 @@ json_object_to_string(JsonObject *obj)
 #endif
 #define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/mattermost-libpurple"
 
-#define MATTERMOST_USERAGENT "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
+#define MATTERMOST_USERAGENT "libpurple"
 
 #define MATTERMOST_BUFFER_DEFAULT_SIZE 40960
 
@@ -748,6 +748,9 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 	purple_http_request_header_set(request, "Accept", "*/*");
 	purple_http_request_header_set(request, "User-Agent", MATTERMOST_USERAGENT);
 	purple_http_request_header_set(request, "Cookie", cookies);
+	if (ma->session_token) {
+		purple_http_request_header_set_printf(request, "Authorization", "Bearer %s", ma->session_token);
+	}
 	
 	if (postdata) {
 		purple_debug_info("mattermost", "With postdata %s\n", postdata);
@@ -782,6 +785,9 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 	g_string_append_printf(headers, "Accept: */*\r\n");
 	g_string_append_printf(headers, "User-Agent: " MATTERMOST_USERAGENT "\r\n");
 	g_string_append_printf(headers, "Cookie: %s\r\n", cookies);
+	if (ma->session_token) {
+		g_string_append_printf(headers, "Authorization: Bearer %s\r\n", ma->session_token);
+	}
 
 	if (postdata) {
 		purple_debug_info("mattermost", "With postdata %s\n", postdata);
@@ -836,9 +842,13 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		ma->session_token = g_strdup(g_hash_table_lookup(ma->cookie_table, "MMAUTHTOKEN"));
 	}
 	
-	if (json_object_get_int_member(response, "status_code") == 400) {
+	if (json_object_get_int_member(response, "status_code") >= 400) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, json_object_get_string_member(response, "message"));
+		return;
 	}
+	
+	g_free(ma->self_user);
+	ma->self_user = g_strdup(json_object_get_string_member(response, "id"));
 	
 	//TODO start websocket
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
@@ -1034,7 +1044,13 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 	} else if (purple_strequal(event, "typing")) {
 		
 	} else if (purple_strequal(event, "status_change")) {
+		//{"event":"status_change","data":{"status":"online","user_id":"mhyq59notjgz3m3hgskirkiscw"},"broadcast":{"omit_users":null,"user_id":"mhyq59notjgz3m3hgskirkiscw","channel_id":"","team_id":""},"seq":1}
+		const gchar *user_id = json_object_get_string_member(data, "user_id");
+		const gchar *status = json_object_get_string_member(data, "status");
 		
+		if (status != NULL) {
+			purple_protocol_got_user_status(ma->account, user_id, status, NULL);
+		}
 	}
 	
 	/*
@@ -1599,7 +1615,7 @@ mm_login(PurpleAccount *account)
 		JsonObject *data = json_object_new();
 		gchar *postdata;
 		
-		json_object_set_string_member(data, "login_id", purple_account_get_username(account));
+		json_object_set_string_member(data, "login_id", ma->username);
 		json_object_set_string_member(data, "password", purple_connection_get_password(pc));
 		json_object_set_string_member(data, "token", ""); //TODO 2FA
 		
@@ -1727,11 +1743,15 @@ mm_websocket_mask(guchar key[4], const guchar *pload, guint64 psize)
 }
 
 static void
-mm_socket_write_data(MattermostAccount *ma, guchar *data, gsize data_len, guchar type)
+mm_socket_write_data(MattermostAccount *ma, guchar *data, gssize data_len, guchar type)
 {
 	guchar *full_data;
 	guint len_size = 1;
 	guchar mkey[4] = { 0x12, 0x34, 0x56, 0x78 };
+	
+	if (data_len == -1) {
+		data_len = strlen((gchar *) data);
+	}
 	
 	if (data_len) {
 		purple_debug_info("mattermost", "sending frame: %*s\n", (int)data_len, data);
@@ -1947,9 +1967,10 @@ mm_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInputCon
 							"Sec-WebSocket-Key: %s\r\n"
 							"User-Agent: " MATTERMOST_USERAGENT "\r\n"
 							"Cookie: %s\r\n"
+							"Authorization: Bearer %s\r\n"
 							//"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"
 							"\r\n", ma->server,
-							websocket_key, cookies);
+							websocket_key, cookies, ma->session_token);
 	
 	purple_ssl_write(ma->websocket, websocket_header, strlen(websocket_header));
 	
@@ -2523,6 +2544,13 @@ mm_created_direct_message_send(MattermostAccount *ma, JsonNode *node, gpointer u
 		return;
 	}
 	result = json_node_get_object(node);
+	
+	if (json_object_get_int_member(result, "status_code") >= 400) {
+		//TODO write error message to window
+		//json_object_get_string_member(result, "message")
+		return;
+	}
+	
 	message = purple_message_get_contents(msg);
 	room_id = json_object_get_string_member(result, "id");
 	buddy = purple_blist_find_buddy(ma->account, who);
