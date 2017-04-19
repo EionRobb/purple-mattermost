@@ -2470,16 +2470,17 @@ mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const 
 	g_free(stripped);
 	
 	json_object_set_string_member(data, "user_id", ma->self_user);
+	json_object_set_int_member(data, "create_at", 0);
 	
-	url = g_string_new("/api/v3/teams/");
+	postdata = json_object_to_string(data);
+	
+	url = g_string_new("https://");
+	g_string_append(url, ma->server);
+	g_string_append(url, "/api/v3/teams/");
 	g_string_append_printf(url, "%s", purple_url_encode(team_id));
 	g_string_append(url, "/channels/");
 	g_string_append_printf(url, "%s", purple_url_encode(channel_id));
 	g_string_append(url, "/posts/create");
-	
-	json_object_set_int_member(data, "create_at", 0);
-	
-	postdata = json_object_to_string(data);
 	
 	mm_fetch_url(ma, url->str, postdata, NULL, NULL); //todo look at callback
 	
