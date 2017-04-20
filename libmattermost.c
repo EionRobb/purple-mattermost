@@ -1608,11 +1608,6 @@ mm_roomlist_get_list(PurpleConnection *pc)
 }
 
 
-void
-mm_set_status(PurpleAccount *account, PurpleStatus *status)
-{
-	//TODO manually set?
-}
 
 void
 mm_set_idle(PurpleConnection *pc, int time)
@@ -1638,6 +1633,15 @@ mm_set_idle(PurpleConnection *pc, int time)
 	g_free(url);
 	g_free(postdata);
 	json_object_unref(data);
+}
+
+void
+mm_set_status(PurpleAccount *account, PurpleStatus *status)
+{
+	PurpleConnection *pc = purple_account_get_connection(account);
+	const char *status_id = purple_status_get_id(status);
+	
+	mm_set_idle(pc, purple_strequal(status_id, "active") ? 0 : 20);
 }
 
 static void
@@ -2850,7 +2854,7 @@ mm_status_types(PurpleAccount *account)
 	status = purple_status_type_new_full(PURPLE_STATUS_AVAILABLE, "online", "Online", TRUE, TRUE, FALSE);
 	types = g_list_append(types, status);
 	
-	status = purple_status_type_new_full(PURPLE_STATUS_AVAILABLE, "away", "Away", TRUE, FALSE, FALSE);
+	status = purple_status_type_new_full(PURPLE_STATUS_AWAY, "away", "Away", TRUE, TRUE, FALSE);
 	types = g_list_append(types, status);
 	
 	status = purple_status_type_new_full(PURPLE_STATUS_OFFLINE, "offline", "Offline", TRUE, TRUE, FALSE);
