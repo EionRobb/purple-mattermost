@@ -249,6 +249,9 @@ purple_message_destroy(PurpleMessage *message)
 #define purple_account_privacy_deny_remove  purple_privacy_deny_remove
 #define PurpleHttpConnection  PurpleUtilFetchUrlData
 #define purple_buddy_set_name  purple_blist_rename_buddy
+#if	!PURPLE_VERSION_CHECK(2, 12, 0)
+#	define PURPLE_MESSAGE_REMOTE_SEND  0x10000
+#endif
 
 #else
 // Purple3 helper functions
@@ -257,6 +260,8 @@ purple_message_destroy(PurpleMessage *message)
 #define purple_message_destroy          g_object_unref
 #define purple_chat_user_set_alias(cb, alias)  g_object_set((cb), "alias", (alias), NULL)
 #define purple_chat_get_alias(chat)  g_object_get_data(G_OBJECT(chat), "alias")
+//TODO remove this when dx adds this to the PurpleMessageFlags enum
+#define PURPLE_MESSAGE_REMOTE_SEND  0x10000
 #endif
 
 
@@ -963,7 +968,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	const gchar *room_name = g_hash_table_lookup(ma->group_chats, channel_id);
 	gint64 update_at = json_object_get_int_member(post, "update_at");
 	gint64 timestamp = update_at / 1000;
-	PurpleMessageFlags msg_flags = (purple_strequal(username, ma->self_username) ? PURPLE_MESSAGE_SEND : PURPLE_MESSAGE_RECV);
+	PurpleMessageFlags msg_flags = (purple_strequal(username, ma->self_username) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
 	
 	if (!g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 		g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
