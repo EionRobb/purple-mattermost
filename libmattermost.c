@@ -295,6 +295,7 @@ typedef struct {
 	GHashTable *result_callbacks; // Result ID -> Callback function
 	GHashTable *usernames_to_ids; // username -> user id
 	GHashTable *ids_to_usernames; // user id -> username
+	GHashTable *teams;            // A list of known team_id's -> team names
 	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
 
 	GSList *http_conns; /**< PurpleHttpConnection to be cancelled on logout */
@@ -822,14 +823,46 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 	g_free(cookies);
 }
 
+static const gchar *
+mm_get_first_team_id(MattermostAccount *ma)
+{
+	GList *team_ids = g_hash_table_get_keys(ma->teams);
+	const gchar *first_team_id = team_ids->data;
+	
+	g_list_free(team_ids);
+	
+	return first_team_id;
+}
+
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
 
 static void
+mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *response = json_node_get_object(node);
+	GList *teams = json_object_get_values(response);
+	GList *i;
+	
+	for (i = teams; i; i = i->next) {
+		JsonNode *member = i->data;
+		JsonObject *team = json_node_get_object(member);
+		
+		const gchar *team_id = json_object_get_string_member(team, "id");
+		const gchar *display_name = json_object_get_string_member(team, "display_name");
+		
+		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(display_name));
+	}
+	
+	g_list_free(teams);
+}
+
+static void
 mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
+	gchar *url;
 
 	if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Bad username/password");
@@ -864,6 +897,10 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	//TODO start websocket
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
 	mm_start_socket(ma);
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/all", NULL);
+	mm_fetch_url(ma, url, NULL, mm_got_teams, NULL);
+	g_free(url);
 }
 
 /*static PurpleChatUserFlags
@@ -1560,6 +1597,7 @@ mm_build_groups_from_blist(MattermostAccount *ma)
 		 node = purple_blist_node_next(node, TRUE)) {
 		if (PURPLE_IS_CHAT(node)) {
 			const gchar *room_id;
+			const gchar *team_id;
 			const gchar *name;
 			PurpleChat *chat = PURPLE_CHAT(node);
 			if (purple_chat_get_account(chat) != ma->account) {
@@ -1568,7 +1606,8 @@ mm_build_groups_from_blist(MattermostAccount *ma)
 			
 			name = purple_chat_get_name(chat);
 			room_id = purple_blist_node_get_string(node, "room_id");
-			if (name == NULL || room_id == NULL || purple_strequal(name, room_id)) {
+			room_id = purple_blist_node_get_string(node, "team_id");
+			if (name == NULL || room_id == NULL || team_id == NULL || purple_strequal(name, room_id)) {
 				GHashTable *components = purple_chat_get_components(chat);
 				if (components != NULL) {
 					if (room_id == NULL) {
@@ -1576,6 +1615,9 @@ mm_build_groups_from_blist(MattermostAccount *ma)
 					}
 					if (name == NULL || purple_strequal(name, room_id)) {
 						name = g_hash_table_lookup(components, "name");
+					}
+					if (team_id == NULL) {
+						team_id = g_hash_table_lookup(components, "team_id");
 					}
 				}
 			}
@@ -1652,6 +1694,7 @@ mm_login(PurpleAccount *account)
 	ma->result_callbacks = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
 	ma->usernames_to_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->ids_to_usernames = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	ma->teams = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->received_message_queue = g_queue_new();
 	
 	userparts = g_strsplit(username, split_string, 2);
@@ -1728,6 +1771,8 @@ mm_close(PurpleConnection *pc)
 	g_hash_table_unref(ma->usernames_to_ids);
 	g_hash_table_remove_all(ma->ids_to_usernames);
 	g_hash_table_unref(ma->ids_to_usernames);
+	g_hash_table_remove_all(ma->teams);
+	g_hash_table_unref(ma->teams);
 	g_queue_free(ma->received_message_queue);
 
 	while (ma->http_conns) {
@@ -2133,6 +2178,11 @@ mm_chat_info(PurpleConnection *pc)
 	pce->label = _("Channel ID");
 	pce->identifier = "id";
 	m = g_list_append(m, pce);
+
+	pce = g_new0(PurpleProtocolChatEntry, 1);
+	pce->label = _("Team ID");
+	pce->identifier = "team_id";
+	m = g_list_append(m, pce);
 	
 	return m;
 }
@@ -2355,12 +2405,14 @@ static void
 mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-	gchar *id;
-	gchar *name;
+	const gchar *id;
+	const gchar *name;
+	const gchar *team_id;
 	PurpleChatConversation *chatconv = NULL;
 	
-	id = (gchar *) g_hash_table_lookup(chatdata, "id");
-	name = (gchar *) g_hash_table_lookup(chatdata, "name");
+	id = g_hash_table_lookup(chatdata, "id");
+	name = g_hash_table_lookup(chatdata, "name");
+	team_id = g_hash_table_lookup(chatdata, "team_id");
 	
 	if (id == NULL && name == NULL) {
 		//What do?
@@ -2393,6 +2445,9 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	chatconv = purple_serv_got_joined_chat(pc, g_str_hash(id), name ? name : id);
 	if (id != NULL) {
 		purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
+	}
+	if (team_id != NULL) {
+		purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
 	}
 	
 	purple_conversation_present(PURPLE_CONVERSATION(chatconv));
@@ -2496,7 +2551,6 @@ mm_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, Matterm
 	json_object_set_string_member(data_inside, "parent_id", ""); //TODO what is this?
 		
 	json_object_set_string_member(data, "action", "user_typing");
-	json_object_set_string_member(data, "method", "stream-notify-room");
 	json_object_set_object_member(data, "data", data_inside);
 	json_object_set_int_member(data, "seq", mm_get_next_seq(ma));
 	
@@ -2571,7 +2625,7 @@ const gchar *message, PurpleMessageFlags flags)
 	const gchar *room_id;
 	PurpleChatConversation *chatconv;
 	gint ret;
-	const gchar *team_id = "rcgiyftm7jyrxnma1osd8zswby"; //TODO
+	const gchar *team_id;
 	
 	ma = purple_connection_get_protocol_data(pc);
 	chatconv = purple_conversations_find_chat(pc, id);
@@ -2586,6 +2640,12 @@ const gchar *message, PurpleMessageFlags flags)
 		g_return_val_if_fail(room_id, -1);
 	}
 	g_return_val_if_fail(g_hash_table_contains(ma->group_chats, room_id), -1); //TODO rejoin room?
+	
+	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
+	if (!team_id) {
+		//Uh oh!
+		team_id = mm_get_first_team_id(ma);
+	}
 	
 	ret = mm_conversation_send_message(ma, team_id, room_id, message);
 	if (ret > 0) {
@@ -2631,7 +2691,7 @@ mm_created_direct_message_send(MattermostAccount *ma, JsonNode *node, gpointer u
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", room_id);
 	}
 	
-	mm_conversation_send_message(ma, "rcgiyftm7jyrxnma1osd8zswby", room_id, message);
+	mm_conversation_send_message(ma, mm_get_first_team_id(ma), room_id, message);
 }
 
 static int
@@ -2648,7 +2708,7 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	gchar *room_id = g_hash_table_lookup(ma->one_to_ones_rev, who);
-	const gchar *team_id = "rcgiyftm7jyrxnma1osd8zswby"; //TODO
+	const gchar *team_id = mm_get_first_team_id(ma);
 	
 	if (room_id == NULL) {
 		JsonObject *data;
