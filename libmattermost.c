@@ -286,6 +286,7 @@ typedef struct {
 	guint64 frame_len_progress;
 	
 	gint seq; //incrementing counter
+	gint roomlist_team_count;
 	
 	GHashTable *one_to_ones;      // A store of known room_id's -> username's
 	GHashTable *one_to_ones_rev;  // A store of known usernames's -> room_id's
@@ -1475,27 +1476,53 @@ mm_handle_add_new_user(MattermostAccount *ma, JsonObject *obj)
 static void
 mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	/*
 	PurpleRoomlist *roomlist = user_data;
-	JsonObject *result = json_node_get_object(node);
-	JsonArray *channels = json_object_get_array_member(result, "channels");
+	JsonArray *channels = json_node_get_array(node);
 	guint i, len = json_array_get_length(channels);
+	PurpleRoomlistRoom *team_category = NULL;
 			
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
-		const gchar *id = json_object_get_string_member(channel, "_id");
-		const gchar *name = json_object_get_string_member(channel, "name");
-		const gchar *room_type = json_object_get_string_member(channel, "t");
-		PurpleRoomlistRoom *room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, name, NULL);
+		const gchar *id = json_object_get_string_member(channel, "id");
+		const gchar *name = json_object_get_string_member(channel, "display_name");
+		const gchar *room_type = json_object_get_string_member(channel, "type");
+		PurpleRoomlistRoom *room;
+		const gchar *type_str;
+		
+		if (i == 0) {
+			const gchar *team_id = json_object_get_string_member(channel, "team_id");
+			const gchar *team_name = g_hash_table_lookup(ma->teams, team_id);
+			
+			team_category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, team_name, NULL);
+			purple_roomlist_room_add_field(roomlist, team_category, team_id);
+			purple_roomlist_room_add(roomlist, team_category);
+		}
+		
+		room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, name, team_category);
 		
 		purple_roomlist_room_add_field(roomlist, room, id);
 		purple_roomlist_room_add_field(roomlist, room, name);
-		purple_roomlist_room_add_field(roomlist, room, room_type && *room_type == 'p' ? _("Private") : "");
+		switch(*room_type) {
+			case 'O': type_str = _("Open"); break;
+			case 'P': type_str = _("Private"); break;
+			case 'D': type_str = _("Direct"); break;
+			case 'G': type_str = _("Group"); break;
+			default:  type_str = _("Unknown"); break;
+		}
+		purple_roomlist_room_add_field(roomlist, room, type_str);
 		
 		purple_roomlist_room_add(roomlist, room);
+		
+		g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
+		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 	}
 	
-	purple_roomlist_set_in_progress(roomlist, FALSE);*/
+	//Only after last team
+	ma->roomlist_team_count--;
+	if (ma->roomlist_team_count <= 0) {
+		purple_roomlist_set_in_progress(roomlist, FALSE);
+		ma->roomlist_team_count = 0;
+	}
 }
 
 static gchar *
@@ -1504,11 +1531,37 @@ mm_roomlist_serialize(PurpleRoomlistRoom *room) {
 	const gchar *id = (const gchar *) fields->data;
 	const gchar *name = (const gchar *) fields->next->data;
 	
-	if (name && *name) {
-		return g_strconcat("#", name, NULL);
-	} else {
-		return g_strdup(id);
+	PurpleRoomlistRoom *team_category = purple_roomlist_room_get_parent(room);
+	GList *team_fields = purple_roomlist_room_get_fields(team_category);
+	const gchar *team_id = (const gchar *) team_fields->data;
+	
+	return g_strconcat(team_id, "/", id, "/", name, NULL);
+}
+
+//roomlist_deserialize
+static GHashTable *
+mm_chat_info_defaults(PurpleConnection *pc, const char *chatname)
+{
+	GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+	
+	if (chatname != NULL)
+	{
+		gchar **chat_parts = g_strsplit_set(chatname, "/", 3);
+		
+		if (chat_parts[0]) {
+			g_hash_table_insert(defaults, "team_id", g_strdup(chat_parts[0]));
+			if (chat_parts[1]) {
+				g_hash_table_insert(defaults, "id", g_strdup(chat_parts[1]));
+				if (chat_parts[2]) {
+					g_hash_table_insert(defaults, "name", g_strdup(chat_parts[2]));
+				}
+			}
+		}
+		
+		g_strfreev(chat_parts);
 	}
+	
+	return defaults;
 }
 
 PurpleRoomlist *
@@ -1519,6 +1572,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	GList *fields = NULL;
 	PurpleRoomlistField *f;
 	gchar *url;
+	GList *teams, *i;
 	
 	roomlist = purple_roomlist_new(ma->account);
 
@@ -1534,14 +1588,16 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	purple_roomlist_set_fields(roomlist, fields);
 	purple_roomlist_set_in_progress(roomlist, TRUE);
 	
-	//todo loop through teams
+	//Loop through teams and look for channels within each
+	for(i = teams = g_hash_table_get_keys(ma->teams); i; i = i->next)
 	{
-		const gchar *team = "rcgiyftm7jyrxnma1osd8zswby";
+		const gchar *team_id = i->data;
 		
-		url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team), "/channels/", NULL);
+		url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/", NULL);
 		mm_fetch_url(ma, url, NULL, mm_roomlist_got_list, roomlist);
 		g_free(url);
 		
+		ma->roomlist_team_count++;
 	}
 	
 	return roomlist;
@@ -2185,25 +2241,6 @@ mm_chat_info(PurpleConnection *pc)
 	m = g_list_append(m, pce);
 	
 	return m;
-}
-
-static GHashTable *
-mm_chat_info_defaults(PurpleConnection *pc, const char *chatname)
-{
-	GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
-	
-	if (chatname != NULL)
-	{
-		if (*chatname == '#') {
-			g_hash_table_insert(defaults, "name", g_strdup(chatname + 1));
-		} else if (strlen(chatname) == 26) {
-			g_hash_table_insert(defaults, "id", g_strdup(chatname));
-		} else {
-			g_hash_table_insert(defaults, "name", g_strdup(chatname));
-		}
-	}
-	
-	return defaults;
 }
 
 static gchar *
