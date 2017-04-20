@@ -959,6 +959,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	const gchar *user_id = json_object_get_string_member(post, "user_id");
 	const gchar *username = json_object_get_string_member(data, "sender_name");
 	const gchar *channel_type = json_object_get_string_member(data, "channel_type");
+	const gchar *pending_post_id = json_object_get_string_member(post, "pending_post_id");
 	const gchar *room_name = g_hash_table_lookup(ma->group_chats, channel_id);
 	gint64 update_at = json_object_get_int_member(post, "update_at");
 	gint64 timestamp = update_at / 1000;
@@ -974,7 +975,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		//  but do display edited messages
 		
 		// check we didn't send this ourselves
-		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, id)) {
+		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
 			gchar *message = mm_markdown_to_html(msg_text);
 			
 			// if (json_object_has_member(post, "attachments")) {
@@ -996,9 +997,12 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 			// }
 			
 			if ((channel_type != NULL && *channel_type != 'D') || g_hash_table_contains(ma->group_chats, channel_id)) {
-				PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(room_name, ma->account);
+				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_int_hash(channel_id));
 				// PurpleChatUser *cb;
 				
+				if (chatconv == NULL) {
+					chatconv = purple_conversations_find_chat_with_account(room_name, ma->account);
+				}
 				if (chatconv == NULL) {
 					chatconv = purple_conversations_find_chat_with_account(channel_id, ma->account);
 				}
@@ -1023,7 +1027,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				// Group chat message
 				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), username, msg_flags, message, timestamp);
 				
-				if (purple_conversation_has_focus(PURPLE_CONVERSATION(purple_conversations_find_chat_with_account(room_name ? room_name : channel_id, ma->account)))) {
+				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
 					mm_mark_room_messages_read(ma, channel_id);
 				}
 				
