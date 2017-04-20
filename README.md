@@ -5,7 +5,7 @@
 
 Connects Pidgin instant messaging client with Mattermost server. 
 
-Functionality includes: 
+## Features 
 
 Group Discussions 
 
@@ -22,6 +22,10 @@ Group Discussions
 Sign-in 
 
 - Ability to sign-in using username/email & password, or AD/LDAP credentials (under development) 
+
+## Screenshots
+
+![s](https://cloud.githubusercontent.com/assets/177788/25235037/ccc74a20-2598-11e7-8d31-349808570c8a.png)
 
 ## Requirements
 
