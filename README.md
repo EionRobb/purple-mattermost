@@ -10,12 +10,12 @@ Functionality includes:
 Group Discussions 
 
 - Ability to join a public or private channels
-- Ability to add members to a public or private channel from a list of users, identifiable by email address or First and Last Name 
+- Ability to add members to a public or private channel from a list of users, identifiable by First and Last Name 
 
 1-1 Discussions
 
 - Ability to send and receive 1-1 messages
-- Ability to begin a new 1-1 discussion by selecting from a list of users, identifiable by email address or First and Last Name 
+- Ability to begin a new 1-1 discussion by selecting from a list of users, identifiable by First and Last Name 
 
 Sign-in 
 
