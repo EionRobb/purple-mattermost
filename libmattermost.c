@@ -2093,6 +2093,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	if (!json_object_has_member(obj, "status_code")) {
 		GList *users = json_object_get_values(obj);
 		GList *i;
+		GList *users_list = NULL, *flags_list = NULL;
 		
 		for (i = users; i; i = i->next) {
 			JsonNode *user_node = i->data;
@@ -2106,9 +2107,18 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 				g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
 			}
 			
-			purple_chat_conversation_add_user(chatconv, username, NULL, mm_role_to_purple_flag(ma, roles), FALSE);
+			users_list = g_list_prepend(users_list, g_strdup(username));
+			flags_list = g_list_prepend(flags_list, GINT_TO_POINTER(mm_role_to_purple_flag(ma, roles)));
 		}
 		
+		purple_chat_conversation_add_users(chatconv, users_list, NULL, flags_list, FALSE);
+		
+		while (users_list != NULL) {
+			g_free(users_list->data);
+			users_list = g_list_delete_link(users_list, users_list);
+		}
+		g_list_free(users_list);
+		g_list_free(flags_list);
 		g_list_free(users);
 	}
 	g_free(channel_id);
