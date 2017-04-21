@@ -2648,7 +2648,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	if (name != NULL && !g_hash_table_contains(ma->group_chats_rev, name)) {
 		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), id ? g_strdup(id) : NULL);
 	}
-	if (team_id != NULL) {
+	if (team_id != NULL && !g_hash_table_contains(ma->channel_teams, id)) {
 		g_hash_table_replace(ma->channel_teams, g_strdup(id), g_strdup(team_id));
 	}
 	
