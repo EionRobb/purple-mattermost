@@ -2775,7 +2775,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	
 	first_name = json_object_get_string_member(user, "first_name");
 	last_name = json_object_get_string_member(user, "last_name");
-	full_name = g_strconcat(first_name ? first_name : "", first_name ? " " : "", last_name, NULL);
+	full_name = g_strconcat(first_name ? first_name : "", (first_name && *first_name) ? " " : "", last_name, NULL);
 	if (*full_name) {
 		purple_serv_got_alias(ma->pc, username, full_name);
 	}
