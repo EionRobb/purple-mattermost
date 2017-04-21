@@ -3,7 +3,7 @@
 
 **XXXX Work in progress** 
 
-Connects Pidgin instant messaging client with Mattermost server. 
+Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium, bitlbee) with Mattermost server. 
 
 ## Features 
 
@@ -30,13 +30,29 @@ Sign-in
 ## Requirements
 
 - Mattermost server version 3.8 or later 
-- Pidgin version XXXX
+- libpurple version 2.9.0 or later
+- libpurple, libjson-glib, glib, libmarkdown2 aka discount
 
 ## Install instructions 
 
 - Install a Mattermost server ([See instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost)) 
-- Install Pidgin
-- Set up Pidgin-Mattermost plugin XXXX
+- Install [Pidgin](https://pidgin.im/download/)
+- Install Pidgin-Mattermost plugin
+-- Restart Pidgin
+-- Add new Mattermost account
+
+### Debian-based distros
+Run the following commands from a terminal
+```
+sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essentials;
+git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
+make && sudo make install
+```
+
+### Windows users
+Windows nightly builds at https://eion.robbmob.com/libmattermost.dll - copy to Program Files\Pidgin\plugins
+
+You'll also need [libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll) in your Program Files\Pidgin directory (*not the plugins subdirectory*) if you don't already have the Skype/Facebook/Steam/other plugin installed
 
 ## Changelog 
 
