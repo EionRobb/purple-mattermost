@@ -1358,7 +1358,7 @@ mm_set_idle(PurpleConnection *pc, int time)
 	postdata = json_object_to_string(data);
 	
 	url = g_strconcat("https://", ma->server, "/api/v3/users/update_active", NULL);
-	mm_fetch_url(ma, url, postdata, NULL, NULL);
+	//mm_fetch_url(ma, url, postdata, NULL, NULL);
 	
 	g_free(url);
 	g_free(postdata);
