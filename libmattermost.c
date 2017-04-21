@@ -1129,7 +1129,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 		
 		if (chatconv != NULL) {
-			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, TRUE);
+			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
 		}
 		
 	} else if (purple_strequal(event, "user_removed")) {
@@ -1141,21 +1141,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 #undef	mm_data_or_broadcast_string
 		if (chatconv != NULL) {
-			gchar *reason = NULL;
-			if (!purple_strequal(user_id, remover_id)) {
-				const gchar *remover_username = g_hash_table_lookup(ma->ids_to_usernames, remover_id);
-				if (remover_username != NULL) {
-					reason = g_strdup_printf(_("was kicked by %s"), remover_username);
-				} else {
-					reason = g_strdup(_("was kicked"));
-				}
-			} else {
-				reason = g_strdup(_("left the channel"));
-			}
-			
-			purple_chat_conversation_remove_user(chatconv, username, reason);
-			
-			g_free(reason);
+			purple_chat_conversation_remove_user(chatconv, username, NULL);
 		}
 		
 	} else if (purple_strequal(event, "hello")) {
