@@ -2283,8 +2283,35 @@ mm_set_room_last_timestamp(MattermostAccount *ma, const gchar *room_id, gint64 l
 }
 
 static void
+mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *obj = json_node_get_object(node);
+	gchar *channel_id = user_data;
+	
+	if (!json_object_has_member(obj, "status_code")) {
+		JsonObject *channel = json_object_get_object_member(obj, "channel");
+		const gchar *channel_name = json_object_get_string_member(channel, "display_name");
+		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+		
+		if (!g_hash_table_contains(ma->group_chats, channel_id)) {
+			g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(channel_name));
+			g_hash_table_replace(ma->group_chats_rev, g_strdup(channel_name), g_strdup(channel_id));
+		}
+		
+		if (chatconv != NULL) {
+			const gchar *topic = json_object_get_string_member(channel, "header");
+			purple_chat_conversation_set_topic(chatconv, NULL, topic);
+		}
+	}
+	
+	g_free(channel_id);
+}
+
+static void
 mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id)
 {
+	GString *url;
+	
 	if (team_id == NULL) {
 		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
 	}
@@ -2297,6 +2324,18 @@ mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_i
 		// Fetch offline history
 		mm_get_history_of_room(ma, team_id, channel_id, mm_get_room_last_timestamp(ma, channel_id));
 	}
+	
+	url = g_string_new("https://");
+	g_string_append(url, ma->server);
+	g_string_append(url, "/api/v3/teams/");
+	g_string_append_printf(url, "%s", purple_url_encode(team_id));
+	g_string_append(url, "/channels/");
+	g_string_append_printf(url, "%s", purple_url_encode(channel_id));
+	g_string_append(url, "/");
+
+	mm_fetch_url(ma, url->str, NULL, mm_got_room_info, g_strdup(channel_id));
+	
+	g_string_free(url, TRUE);
 }
 
 
