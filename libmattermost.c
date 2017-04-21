@@ -2561,7 +2561,7 @@ mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_i
 		g_string_append_printf(url, "%s", purple_url_encode(team_id));
 		g_string_append(url, "/channels/");
 		g_string_append_printf(url, "%s", purple_url_encode(channel_id));
-		g_string_append(url, "/posts/since");
+		g_string_append(url, "/posts/since/");
 		g_string_append_printf(url, "%" G_GINT64_FORMAT, mm_get_room_last_timestamp(ma, channel_id));
 	
 		mm_fetch_url(ma, url->str, NULL, mm_got_history_of_room, g_strdup(channel_id));
@@ -2978,6 +2978,56 @@ mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
 	g_string_free(url, TRUE);
 }
 
+static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
+
+static void
+mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	PurpleBuddy *buddy = user_data;
+	//TODO
+	(void) buddy;
+}
+
+static void
+mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *user = json_node_get_object(node);
+	PurpleBuddy *buddy = user_data;
+	const gchar *user_id;
+	const gchar *username;
+	const gchar *nickname;
+	const gchar *first_name;
+	const gchar *last_name;
+	gchar *full_name;
+	
+	if (json_object_has_member(user, "status_code")) {
+		// bad user, delete
+		purple_blist_remove_buddy(buddy);
+		return;
+	}
+	
+	user_id = json_object_get_string_member(user, "id");
+	username = json_object_get_string_member(user, "username");
+	
+	g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
+	g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
+	
+	mm_add_buddy(ma->pc, buddy, NULL, NULL);
+	
+	nickname = json_object_get_string_member(user, "nickname");
+	if (nickname && *nickname) {
+		purple_serv_got_private_alias(ma->pc, username, nickname);
+	}
+	
+	first_name = json_object_get_string_member(user, "first_name");
+	last_name = json_object_get_string_member(user, "last_name");
+	full_name = g_strconcat(first_name ? first_name : "", first_name ? " " : "", last_name, NULL);
+	if (*full_name) {
+		purple_serv_got_alias(ma->pc, username, full_name);
+	}
+	g_free(full_name);
+}
+
 static void
 mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -2997,11 +3047,7 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 }
 
 static void
-mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group
-#if PURPLE_VERSION_CHECK(3, 0, 0)
-, const char *message
-#endif
-)
+mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	const gchar *buddy_name = purple_buddy_get_name(buddy);
@@ -3009,12 +3055,30 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group
 	gchar *avatar_url;
 	
 	if (user_id == NULL) {
-		//TODO search for user
+		gchar *url;
 		
-		//  /api/v3/users/search
-		
-		//"term", buddy_name
-		//"allow_inactive", TRUE
+		//Search for user
+		// if they've entered what we think is a username, sanitise it
+		if (!strchr(buddy_name, ' ') && !strchr(buddy_name, '@')) {
+			url = g_strdup_printf("https://%s/api/v3/users/name/%s", ma->server, purple_url_encode(buddy_name));
+			mm_fetch_url(ma, url, NULL, mm_got_add_buddy_user, buddy);
+			g_free(url);
+		} else {
+			// Doesn't look like a username, do a search
+			JsonObject *obj = json_object_new();
+			gchar *postdata;
+			
+			json_object_set_string_member(obj, "term", buddy_name);
+			json_object_set_boolean_member(obj, "allow_inactive", TRUE);
+			postdata = json_object_to_string(obj);
+			
+			url = g_strdup_printf("https://%s/api/v3/users/search", ma->server);
+			mm_fetch_url(ma, url, postdata, mm_got_add_buddy_search, buddy);
+			g_free(url);
+			
+			g_free(postdata);
+			json_object_unref(obj);
+		}
 		
 		return;
 	}
@@ -3048,6 +3112,14 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group
 	
 	return;
 }
+
+#if !PURPLE_VERSION_CHECK(3, 0, 0)
+static void
+mm_add_buddy_no_message(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group)
+{
+	mm_add_buddy(pc, buddy, group, NULL);
+}
+#endif
 
 
 static const char *
@@ -3299,7 +3371,7 @@ plugin_init(PurplePlugin *plugin)
 		prpl_info->struct_size = sizeof(PurplePluginProtocolInfo);
 	#endif
 	#if PURPLE_MINOR_VERSION >= 8
-		//prpl_info->add_buddy_with_invite = mm_add_buddy_with_invite;
+		//prpl_info->add_buddy_with_invite = mm_add_buddy;
 	#endif
 	
 	prpl_info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE;
@@ -3328,7 +3400,7 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->chat_invite = mm_chat_invite;
 	prpl_info->chat_send = mm_chat_send;
 	prpl_info->set_chat_topic = mm_chat_set_topic;
-	prpl_info->add_buddy = mm_add_buddy;
+	prpl_info->add_buddy = mm_add_buddy_no_message;
 	
 	prpl_info->roomlist_get_list = mm_roomlist_get_list;
 	prpl_info->roomlist_room_serialize = mm_roomlist_serialize;
