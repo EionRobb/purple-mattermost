@@ -88,26 +88,6 @@ json_object_to_string(JsonObject *obj)
 	return str;
 }
 
-// static void
-// json_array_foreach_element_reverse (JsonArray        *array,
-                                    // JsonArrayForeach  func,
-                                    // gpointer          data)
-// {
-	// gint i;
-
-	// g_return_if_fail (array != NULL);
-	// g_return_if_fail (func != NULL);
-
-	// for (i = json_array_get_length(array) - 1; i >= 0; i--)
-	// {
-		// JsonNode *element_node;
-
-		// element_node = json_array_get_element(array, i);
-
-		// (* func) (array, i, element_node, data);
-	// }
-// }
-
 
 #include <purple.h>
 #if PURPLE_VERSION_CHECK(3, 0, 0)
@@ -1027,33 +1007,12 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					purple_chat_conversation_set_topic(chatconv, new_topic_who, new_topic);
 				}
 				
-				// cb = purple_chat_conversation_find_user(chatconv, username);
-				// if (cb == NULL) {
-					// purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
-					// cb = purple_chat_conversation_find_user(chatconv, username);
-				// }
-				
-				// if (json_object_has_member(post, "bot") && json_object_has_member(message_obj, "sender_name")) {
-					// const gchar *sender_name = json_object_get_string_member(message_obj, "sender_name");
-					// if (cb != NULL) {
-						// purple_chat_user_set_alias(cb, sender_name);
-					// } else {
-						// gchar *temp_message = g_strdup_printf("%s: %s", sender_name, message);
-						// g_free(message);
-						// message = temp_message;
-					// }
-				// }
-				
 				// Group chat message
 				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), username, msg_flags, message, timestamp);
 				
 				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
 					mm_mark_room_messages_read(ma, channel_id);
 				}
-				
-				// if (cb && json_object_has_member(message_obj, "bot") && json_object_has_member(message_obj, "sender_name")) {
-					// purple_chat_user_set_alias(cb, NULL);
-				// }
 				
 			} else {
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
@@ -1090,8 +1049,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	
 	return update_at;
 }
-
-void mm_handle_add_new_user(MattermostAccount *ma, JsonObject *obj);
 
 PurpleGroup* mm_get_or_create_default_group();
 
@@ -1217,272 +1174,6 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		
 		mm_socket_write_json(ma, data);
 	}
-	
-	/*
-    if (purple_strequal(msg, "ping")) {
-		response = json_object_new();
-		json_object_set_string_member(response, "msg", "pong");
-	} else if (purple_strequal(msg, "added")) {
-		const gchar *collection = json_object_get_string_member(obj, "collection");
-		
-		if (purple_strequal(collection, "users")) {
-			mm_handle_add_new_user(ma, obj);
-			
-		} else if (purple_strequal(collection, "mattermost_room")) {
-			const gchar *room_id = json_object_get_string_member(obj, "id");
-			JsonObject *fields = json_object_get_object_member(obj, "fields");
-			JsonArray *usernames = json_object_get_array_member(fields, "usernames");
-			gint i;
-			guint len = json_array_get_length(usernames);
-			GList *users = NULL, *flags = NULL;
-			PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(g_hash_table_lookup(ma->group_chats, room_id), ma->account);
-			
-			if (chatconv == NULL) {
-				chatconv = purple_conversations_find_chat_with_account(room_id, ma->account);
-			}
-		
-			for (i = len - 1; i >= 0; i--) {
-				const gchar *username = json_array_get_string_element(usernames, i);
-				if (username != NULL) {
-					users = g_list_prepend(users, g_strdup(username));
-					flags = g_list_prepend(flags, GINT_TO_POINTER(PURPLE_CHAT_USER_NONE));
-				}
-			}
-		
-			purple_chat_conversation_add_users(chatconv, users, NULL, flags, FALSE);
-			
-			while (users != NULL) {
-				g_free(users->data);
-				users = g_list_delete_link(users, users);
-			}
-			
-			g_list_free(users);
-			g_list_free(flags);
-		}
-    } else if (purple_strequal(msg, "changed")) {
-		const gchar *collection = json_object_get_string_member(obj, "collection");
-		if (purple_strequal(collection, "users")) {
-			JsonObject *fields = json_object_get_object_member(obj, "fields");
-			const gchar *user_id = json_object_get_string_member(obj, "id");
-			const gchar *username = json_object_get_string_member(fields, "username");
-			const gchar *status = json_object_get_string_member(fields, "status");
-			const gchar *name = json_object_get_string_member(fields, "name");
-			
-			if (status != NULL) {
-				if (username == NULL) {
-					username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
-				}
-				
-				purple_protocol_got_user_status(ma->account, username, status, NULL);
-			}
-			
-			//a["{\"msg\":\"changed\",\"collection\":\"users\",\"id\":\"123\",\"fields\":{\"active\":true,\"name\":\"John Doe\",\"type\":\"user\"}}"]
-			if (name != NULL) {
-				if (username == NULL) {
-					username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
-				}
-				if (username != NULL) {
-					purple_serv_got_alias(ma->pc, username, name);
-				}
-			}
-			
-		} else if (purple_strequal(collection, "stream-room-messages")) {
-			//New incoming message
-			//a["{\"msg\":\"changed\",\"collection\":\"stream-room-messages\",\"id\":\"id\",\"fields\":{\"eventName\":\"GENERAL\",\"args\":[{\"_id\":\"000096D065C7FFFF\",\"rid\":\"GENERAL\",\"msg\":\"test from pidgin\",\"ts\":{\"$date\":1477121045178},\"u\":{\"_id\":\"hZKg86uJavE6jYLya\",\"username\":\"eionrobb\"},\"_updatedAt\":{\"$date\":1477121045250}}]}}"]
-			//(02:11:28) mattermost: got frame data: a["{\"msg\":\"changed\",\"collection\":\"stream-room-messages\",\"id\":\"id\",\"fields\":{\"eventName\":\"__my_messages__\",\"args\":[{\"_id\":\"uDnK575PrTpDbf39c\",\"rid\":\"hZKg86uJavE6jYLyaoAKZSpTPTQHbp6nBD\",\"msg\":\"test\",\"ts\":{\"$date\":1477919487366},\"u\":{\"_id\":\"oAKZSpTPTQHbp6nBD\",\"username\":\"eiontest\"},\"_updatedAt\":{\"$date\":1477919487368}},{\"roomParticipant\":true,\"roomType\":\"d\"}]}}"]
-			
-			JsonObject *fields = json_object_get_object_member(obj, "fields");
-			JsonArray *args = json_object_get_array_member(fields, "args");
-			JsonObject *arg = json_array_get_object_element(args, 0);
-			JsonObject *roomarg = json_array_get_object_element(args, 1);
-			const gchar *rid = json_object_get_string_member(arg, "rid");
-			gint64 last_message_timestamp;
-			
-			last_message_timestamp = mm_process_room_message(ma, arg, roomarg);
-			
-			mm_set_room_last_timestamp(ma, rid, last_message_timestamp);
-		} else if (purple_strequal(collection, "stream-notify-room")) {
-			//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-room\",\"id\":\"id\",\"fields\":{\"eventName\":\"GENERAL/typing\",\"args\":[\"Neilgle\",true]}}"]
-			JsonObject *fields = json_object_get_object_member(obj, "fields");
-			const gchar *eventName = json_object_get_string_member(fields, "eventName");
-			JsonArray *args = json_object_get_array_member(fields, "args");
-			gchar **event_split;
-			
-			event_split = g_strsplit(eventName, "/", 2);		
-			if (purple_strequal(event_split[1], "typing")) {
-				const gchar *room_id = event_split[0];
-				const gchar *username = json_array_get_string_element(args, 0);
-				gboolean is_typing = json_array_get_boolean_element(args, 1);
-				
-				if (!purple_strequal(username, ma->self_user)) {
-					if (g_hash_table_contains(ma->group_chats, room_id)) {
-						// This is a group conversation
-						PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(g_hash_table_lookup(ma->group_chats, room_id), ma->account);
-						if (chatconv == NULL) {
-							chatconv = purple_conversations_find_chat_with_account(room_id, ma->account);
-						}
-						if (chatconv != NULL) {
-							PurpleChatUser *cb = purple_chat_conversation_find_user(chatconv, username);
-							PurpleChatUserFlags cbflags;
-
-							if (cb == NULL) {
-								// Getting notified about a buddy we dont know about yet
-								//TODO add buddy
-								return;
-							}
-							cbflags = purple_chat_user_get_flags(cb);
-							
-							if (is_typing)
-								cbflags |= PURPLE_CHAT_USER_TYPING;
-							else
-								cbflags &= ~PURPLE_CHAT_USER_TYPING;
-							
-							purple_chat_user_set_flags(cb, cbflags);
-						}
-					} else {
-						PurpleIMTypingState typing_state;
-						
-						if (is_typing) {
-							typing_state = PURPLE_IM_TYPING;
-						} else {
-							typing_state = PURPLE_IM_NOT_TYPING;
-						}
-						purple_serv_got_typing(ma->pc, username, 15, typing_state);
-						
-					}
-				}
-			}
-			g_strfreev(event_split);
-		} else if (purple_strequal(collection, "stream-notify-user")) {
-			JsonObject *fields = json_object_get_object_member(obj, "fields");
-			const gchar *eventName = json_object_get_string_member(fields, "eventName");
-			JsonArray *args = json_object_get_array_member(fields, "args");
-			gchar **event_split;
-			
-			event_split = g_strsplit(eventName, "/", 2);	
-			if (purple_strequal(event_split[1], "rooms-changed")) {
-				// New chat started
-				//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-user\",\"id\":\"id\",\"fields\":{\"eventName\":\"hZKg86uJavE6jYLya/rooms-changed\",\"args\":[\"inserted\",{\"_id\":\"JoxbibGnXizRb4ef4hZKg86uJavE6jYLya\",\"t\":\"d\"}]}}"]
-				//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-user\",\"id\":\"id\",\"fields\":{\"eventName\":\"hZKg86uJavE6jYLya/rooms-changed\",\"args\":[\"inserted\",{\"_id\":\"GENERAL\",\"name\":\"general\",\"t\":\"c\",\"topic\":\"Community support in [#support](https://demo.rocket.chat/channel/support).  Developers in [#dev](https://demo.rocket.chat/channel/dev)\",\"muted\":[\"daly\",\"kkloggg\",\"staci.holmes.segarra\"],\"jitsiTimeout\":{\"$date\":1477687206856},\"default\":true}]}}"]
-				//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-user\",\"id\":\"id\",\"fields\":{\"eventName\":\"hZKg86uJavE6jYLya/rooms-changed\",\"args\":[\"updated\",{\"_id\":\"ocwXv7EvCJ69d3AdG\",\"name\":\"eiontestchat\",\"t\":\"p\",\"u\":{\"_id\":null,\"username\":null},\"topic\":\"ham salad\",\"ro\":false}]}}"]
-			} else if (purple_strequal(event_split[1], "subscriptions-changed")) {
-				// Joined a chat			//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-user\",\"id\":\"id\",\"fields\":{\"eventName\":\"oAKZSpTPTQHbp6nBD/subscriptions-changed\",\"args\":[\"inserted\",{\"t\":\"d\",\"ts\":{\"$date\":1477264898460},\"ls\":{\"$date\":1477264898460},\"name\":\"eionrobb\",\"rid\":\"hZKg86uJavE6jYLyaoAKZSpTPTQHbp6nBD\",\"u\":{\"_id\":\"oAKZSpTPTQHbp6nBD\",\"username\":\"eiontest\"},\"open\":true,\"alert\":false,\"unread\":0,\"_updatedAt\":{\"$date\":1477264898482},\"_id\":\"seeiaYbHTmFzbZKPx\"}]}}"]
-				//a["{\"msg\":\"changed\",\"collection\":\"stream-notify-user\",\"id\":\"id\",\"fields\":{\"eventName\":\"hZKg86uJavE6jYLya/subscriptions-changed\",\"args\":[\"inserted\",{\"t\":\"c\",\"ts\":{\"$date\":1477913491203},\"name\":\"general\",\"rid\":\"GENERAL\",\"u\":{\"_id\":\"hZKg86uJavE6jYLya\",\"username\":\"eionrobb\"},\"open\":true,\"alert\":true,\"unread\":1,\"_updatedAt\":{\"$date\":1477913492365},\"_id\":\"AakoPQ2mvhXyaFRux\"}]}}"]
-				JsonObject *room_info = json_array_get_object_element(args, 1);
-				const gchar *name = json_object_get_string_member(room_info, "name");
-				const gchar *room_id = json_object_get_string_member(room_info, "rid");
-				const gchar *room_type = json_object_get_string_member(room_info, "t");
-				gboolean new_room = FALSE;
-				
-				if (room_type && *room_type == 'd') {
-					// Direct message
-					if (!g_hash_table_contains(ma->one_to_ones, room_id)) {
-						g_hash_table_replace(ma->one_to_ones, g_strdup(room_id), g_strdup(name));
-						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(name), g_strdup(room_id));
-						
-						new_room = TRUE;
-					}
-				} else { //'c' for public chat, 'p' for private chat
-					// Group chat
-					if (!g_hash_table_contains(ma->group_chats, room_id)) {
-						g_hash_table_replace(ma->group_chats, g_strdup(room_id), g_strdup(name));
-						g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(room_id));
-						
-						new_room = TRUE;
-					}
-					
-					// chatconv = purple_serv_got_joined_chat(ma->pc, g_str_hash(room_id), room_id);
-					// purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(room_id));
-				}
-				
-				if (new_room == TRUE) {
-					mm_join_room(ma, room_id);
-				}
-			}
-			g_strfreev(event_split);
-			
-		}
-	} else if (purple_strequal(msg, "removed")) {
-		const gchar *collection = json_object_get_string_member(obj, "collection");
-		
-		if (purple_strequal(collection, "users")) {
-			//a["{\"msg\":\"removed\",\"collection\":\"users\",\"id\":\"qYbdBFhcQyiyLx7z9\"}"]
-			const gchar *user_id = json_object_get_string_member(obj, "id");
-			const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
-			
-			if (username != NULL) {
-				purple_protocol_got_user_status(ma->account, username, "offline", NULL);
-			}
-			
-			g_hash_table_remove(ma->usernames_to_ids, username);
-			g_hash_table_remove(ma->ids_to_usernames, user_id);
-		}
-		
-	} else if (purple_strequal(msg, "connected")) {
-	
-		JsonArray *params = json_array_new();
-		JsonObject *param = json_object_new();
-		JsonObject *user = json_object_new();
-		JsonObject *password = json_object_new();
-		gchar *digest;
-		
-		if (ma->session_token) {
-			// Continue an existing session
-			json_object_set_string_member(param, "resume", ma->session_token);
-		} else {
-			// Start a brand new login
-			if (strchr(ma->username, '@')) {
-				json_object_set_string_member(user, "email", ma->username);
-			} else {
-				json_object_set_string_member(user, "username", ma->username);
-			}
-			digest = g_compute_checksum_for_string(G_CHECKSUM_SHA256, purple_connection_get_password(ma->pc), -1);
-			json_object_set_string_member(password, "digest", digest);
-			json_object_set_string_member(password, "algorithm", "sha-256");
-			g_free(digest);
-			
-			json_object_set_object_member(param, "user", user);
-			json_object_set_object_member(param, "password", password);
-		}
-		
-		json_array_add_object_element(params, param);
-		
-		response = json_object_new();
-		json_object_set_string_member(response, "msg", "method");
-		json_object_set_string_member(response, "method", "login");
-		json_object_set_array_member(response, "params", params);
-		json_object_set_string_member(response, "id", mm_get_next_id_str_callback(ma, mm_login_response, NULL));
-		
-		
-	} else if (purple_strequal(msg, "result")) {
-		JsonNode *result = json_object_get_member(obj, "result");
-		const gchar *callback_id = json_object_get_string_member(obj, "id");
-		MattermostProxyConnection *proxy = g_hash_table_lookup(ma->result_callbacks, callback_id);
-		
-		if (proxy != NULL) {
-			if (proxy->callback != NULL) {
-				proxy->callback(ma, result, proxy->user_data);
-			}
-			g_hash_table_remove(ma->result_callbacks, callback_id);
-		}
-	} else if (purple_strequal(msg, "failed")) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, "Failed to connect to server");
-	}
-	if (!json_object_has_member(obj, "msg") && json_object_has_member(obj, "server_id")) {
-		JsonArray *support = json_array_new();
-		//["{\"msg\":\"connect\",\"version\":\"1\",\"support\":[\"1\",\"pre2\",\"pre1\"]}"]
-		
-		json_array_add_string_element(support, "1");
-		
-		response = json_object_new();
-		json_object_set_string_member(response, "msg", "connect");
-		json_object_set_string_member(response, "version", "1");
-		json_object_set_array_member(response, "support", support);
-	}
-	
-	if (response != NULL) {
-		mm_socket_write_json(ma, response);
-	}*/
 }
 
 PurpleGroup *
@@ -1498,41 +1189,6 @@ mm_get_or_create_default_group()
 	}
 	
     return mm_group;
-}
-
-void
-mm_handle_add_new_user(MattermostAccount *ma, JsonObject *obj)
-{
-/*	PurpleAccount* account = ma->account;
-	PurpleGroup *defaultGroup = mm_get_or_create_default_group();
-    
-	JsonObject *fields = json_object_get_object_member(obj, "fields");
-	const gchar *user_id = json_object_get_string_member(obj, "id");
-	const gchar *username = json_object_get_string_member(fields, "username");
-	const gchar *status = json_object_get_string_member(fields, "status");
-	const gchar *name = json_object_get_string_member(fields, "name");
-
-	if (status != NULL) {
-		purple_protocol_got_user_status(ma->account, username, status, NULL);
-	}
-
-	if (username != NULL) {
-		g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
-		g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
-
-		if (purple_account_get_bool(account, "auto-add-buddy", FALSE)) {
-			//other user not us
-			PurpleBuddy *buddy = purple_blist_find_buddy(account, username);
-			if (buddy == NULL) {
-				buddy = purple_buddy_new(account, username, name);
-				purple_blist_add_buddy(buddy, NULL, defaultGroup, NULL);
-			}
-		}
-
-		if (name != NULL) {
-			purple_serv_got_alias(ma->pc, username, name);
-		}
-	}*/
 }
 
 typedef struct {
@@ -2573,20 +2229,6 @@ mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_i
 
 static void mm_join_chat(PurpleConnection *pc, GHashTable *chatdata);
 
-/*static void
-mm_got_chat_name_id(MattermostAccount *ma, JsonNode *node, gpointer user_data)
-{
-	GHashTable *chatdata = user_data;
-	
-	if (node == NULL) {
-		return;
-	}
-	
-	g_hash_table_replace(chatdata, "id", g_strdup(json_node_get_string(node)));
-	
-	mm_join_chat(ma->pc, chatdata);
-	g_hash_table_unref(chatdata);
-}*/
 
 static void
 mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
