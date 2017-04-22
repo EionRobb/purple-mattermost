@@ -7,19 +7,19 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 ## Features 
 
-Group Discussions 
+**Group Discussions**
 
 - Ability to search for channels by team (beta) 
 - Ability to send and received messages (beta) 
 - Ability to join a public or private channels (beta) 
 - Ability to add members to a public or private channel from a list of users, identifiable by First and Last Name (under development) 
 
-1-1 Discussions
+**1-1 Discussions**
 
 - Ability to send and receive 1-1 messages (beta) 
 - Ability to begin a new 1-1 discussion by selecting from a list of users, identifiable by First and Last Name (under development) 
 
-Sign-in 
+**Sign-in**
 
 - Ability to sign-in using username/email & password, or AD/LDAP credentials (under development) 
 
@@ -29,20 +29,24 @@ Sign-in
 
 ## Requirements
 
-- Mattermost server version 3.8 or later 
+- Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
 - libpurple version 2.9.0 or later
 - libpurple, libjson-glib, glib, libmarkdown2 aka discount
 
-## Install instructions 
+## Install Guides
 
-- Install a Mattermost server ([See instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost)) 
+## Windows Install 
+
+- Install a Mattermost server  
 - Install [Pidgin](https://pidgin.im/download/)
 - Install Pidgin-Mattermost plugin
--- Restart Pidgin
--- Add new Mattermost account
+- Restart Pidgin
+- Add new Mattermost account
 
 ### Debian-based distros
+
 Run the following commands from a terminal
+
 ```
 sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essentials;
 git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
@@ -50,9 +54,10 @@ make && sudo make install
 ```
 
 ### Windows users
-Windows nightly builds at https://eion.robbmob.com/libmattermost.dll - copy to Program Files\Pidgin\plugins
 
-You'll also need [libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll) in your Program Files\Pidgin directory (*not the plugins subdirectory*) if you don't already have the Skype/Facebook/Steam/other plugin installed
+Windows nightly builds at https://eion.robbmob.com/libmattermost.dll - copy to `Program Files\Pidgin\plugins`
+
+You'll also need [libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll) in your `Program Files\Pidgin` directory (*not the plugins subdirectory*) if you don't already have the Skype/Facebook/Steam/other plugin installed
 
 ## Changelog 
 
