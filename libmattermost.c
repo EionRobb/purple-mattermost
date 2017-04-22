@@ -1331,18 +1331,20 @@ mm_set_idle(PurpleConnection *pc, int time)
 	
 	JsonObject *data = json_object_new();
 	gchar *url, *postdata;
-	const gchar *active = "false";
+	const gchar *channel_id = "";
+	const gchar *team_id = mm_get_first_team_id(ma);
 	
 	if (time < 20) {
-		active = "true";
+		channel_id = "TODO";
 	}
 	
-	json_object_set_string_member(data, "user_id", ma->self_user_id);
-	json_object_set_string_member(data, "active", active);
+	json_object_set_string_member(data, "channel_id", channel_id);
+	json_object_set_string_member(data, "prev_channel_id", "");
+	json_object_set_int_member(data, "time", 0);
 	
 	postdata = json_object_to_string(data);
 	
-	url = g_strconcat("https://", ma->server, "/api/v3/users/update_active", NULL);
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/", team_id, "/channels/view", NULL);
 	//mm_fetch_url(ma, url, postdata, NULL, NULL);
 	
 	g_free(url);
@@ -1354,9 +1356,25 @@ void
 mm_set_status(PurpleAccount *account, PurpleStatus *status)
 {
 	PurpleConnection *pc = purple_account_get_connection(account);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	const char *status_id = purple_status_get_id(status);
+	JsonObject *data;
+	const gchar *team_id = mm_get_first_team_id(ma);
+	gchar *cmd = g_strconcat("/", status_id, NULL);
+	gchar *postdata, *url;
 	
-	mm_set_idle(pc, purple_strequal(status_id, "active") ? 0 : 20);
+	data = json_object_new();
+	json_object_set_string_member(data, "command", cmd);
+	json_object_set_string_member(data, "channel_id", "");
+	postdata = json_object_to_string(data);
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/commands/execute", NULL);
+	mm_fetch_url(ma, url, postdata, NULL, NULL);
+	g_free(url);
+	
+	g_free(postdata);
+	json_object_unref(data);
+	g_free(cmd);
 }
 
 static void
