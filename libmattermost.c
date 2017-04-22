@@ -1353,9 +1353,6 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		PurpleRoomlistRoom *room;
 		const gchar *type_str;
 		
-		if (i == 0) {
-		}
-		
 		room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, name, team_category);
 		
 		purple_roomlist_room_add_field(roomlist, room, id);
@@ -1454,13 +1451,27 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	//Loop through teams and look for channels within each
 	for(i = teams = g_hash_table_get_keys(ma->teams); i; i = i->next)
 	{
-		MatterMostTeamRoomlist *mmtrl = g_new0(MatterMostTeamRoomlist, 1);
+		MatterMostTeamRoomlist *mmtrl;
 		const gchar *team_id = i->data;
 		
+		// Get a list of channels the user has already joined
+		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
 		mmtrl->roomlist = roomlist;
 		
 		url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/", NULL);
+		mm_fetch_url(ma, url, NULL, mm_roomlist_got_list, mmtrl);
+		g_free(url);
+		
+		ma->roomlist_team_count++;
+		
+		
+		// Get a list of channels the user has *not* yet joined
+		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
+		mmtrl->team_id = g_strdup(team_id);
+		mmtrl->roomlist = roomlist;
+		
+		url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/more/0/9999", NULL);
 		mm_fetch_url(ma, url, NULL, mm_roomlist_got_list, mmtrl);
 		g_free(url);
 		
