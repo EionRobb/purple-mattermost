@@ -3002,6 +3002,7 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	JsonObject *data;
 	gchar *postdata;
 	gchar *url;
+	gchar *params_str, *original_msg;
 	
 	pc = purple_conversation_get_connection(conv);
 	if (pc == NULL) {
@@ -3033,8 +3034,12 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 		return PURPLE_CMD_RET_FAILED;
 	}
 	
+	params_str = g_strjoinv(" ", args);
+	original_msg = g_strconcat("/", cmd, " ", params_str, NULL);
+	g_free(params_str);
+	
 	data = json_object_new();
-	json_object_set_string_member(data, "command", cmd);
+	json_object_set_string_member(data, "command", original_msg);
 	json_object_set_string_member(data, "channel_id", channel_id);
 	postdata = json_object_to_string(data);
 	
