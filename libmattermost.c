@@ -1471,6 +1471,9 @@ mm_login(PurpleAccount *account)
 			ma->last_load_last_message_timestamp = (ma->last_load_last_message_timestamp << 32) | ((guint64) purple_account_get_int(account, "last_message_timestamp_low", 0) & 0xFFFFFFFF);
 		}
 	}
+	if (ma->last_load_last_message_timestamp < 0) {
+		ma->last_load_last_message_timestamp = 0;
+	}
 	
 	ma->one_to_ones = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->one_to_ones_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
@@ -2151,7 +2154,7 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 	JsonObject *obj = json_node_get_object(node);
 	JsonObject *posts = json_object_get_object_member(obj, "posts");
 	JsonArray *order = json_object_get_array_member(obj, "order");
-	gint64 last_message_timestamp;
+	gint64 last_message_timestamp = 0;
 	gint i, len = json_array_get_length(order);
 	
 	for (i = len - 1; i >= 0; i--) {
@@ -2161,7 +2164,9 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 		last_message_timestamp = mm_process_room_message(ma, post, NULL);
 	}
 	
-	mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+	if (last_message_timestamp > 0) {
+		mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+	}
 	
 	g_free(channel_id);
 }
@@ -2239,6 +2244,10 @@ mm_set_room_last_timestamp(MattermostAccount *ma, const gchar *room_id, gint64 l
 {
 	PurpleBlistNode *blistnode = NULL;
 	gchar *last_message_timestamp_str;
+	
+	if (last_timestamp < 0) {
+		return;
+	}
 	
 	if (g_hash_table_contains(ma->group_chats, room_id)) {
 		//twas a group chat
