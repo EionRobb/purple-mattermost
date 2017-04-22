@@ -116,6 +116,8 @@ json_object_to_string(JsonObject *obj)
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
+#define MATTERMOST_DEFAULT_BLIST_GROUP_NAME  _("Mattermost")
+
 
 // Purple2 compat functions
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
@@ -256,6 +258,23 @@ purple_message_destroy(PurpleMessage *message)
 #define purple_message_get_recipient(message)  (message->who)
 #define purple_message_get_contents(message)   (message->what)
 
+#undef purple_notify_error
+#define purple_notify_error(handle, title, primary, secondary, cpar)   \
+	purple_notify_message((handle), PURPLE_NOTIFY_MSG_ERROR, (title), \
+						(primary), (secondary), NULL, NULL)
+#undef purple_notify_warning
+#define purple_notify_warning(handle, title, primary, secondary, cpar)   \
+	purple_notify_message((handle), PURPLE_NOTIFY_MSG_WARNING, (title), \
+						(primary), (secondary), NULL, NULL)
+#define purple_notify_user_info_add_pair_html  purple_notify_user_info_add_pair
+
+#define purple_request_cpar_from_connection(a)  purple_connection_get_account(a), NULL, NULL
+
+#define PurpleProtocolAction                           PurplePluginAction
+#define purple_protocol_action_get_connection(action)  ((PurpleConnection *) (action)->context)
+#define purple_protocol_action_new                     purple_plugin_action_new
+#define purple_protocol_get_id                         purple_plugin_get_id
+
 #define purple_account_privacy_deny_add     purple_privacy_deny_add
 #define purple_account_privacy_deny_remove  purple_privacy_deny_remove
 #define PurpleHttpConnection  PurpleUtilFetchUrlData
@@ -271,6 +290,8 @@ purple_message_destroy(PurpleMessage *message)
 #define purple_message_destroy          g_object_unref
 #define purple_chat_user_set_alias(cb, alias)  g_object_set((cb), "alias", (alias), NULL)
 #define purple_chat_get_alias(chat)  g_object_get_data(G_OBJECT(chat), "alias")
+#define purple_protocol_action_get_connection(action)  ((action)->connection)
+
 //TODO remove this when dx adds this to the PurpleMessageFlags enum
 #define PURPLE_MESSAGE_REMOTE_SEND  0x10000
 #endif
@@ -1325,10 +1346,10 @@ mm_get_or_create_default_group()
 {
     PurpleGroup *mm_group = NULL;
 	
-	mm_group = purple_blist_find_group(_("Mattermost"));
+	mm_group = purple_blist_find_group(MATTERMOST_DEFAULT_BLIST_GROUP_NAME);
 	if (!mm_group)
 	{
-		mm_group = purple_group_new(_("Mattermost"));
+		mm_group = purple_group_new(MATTERMOST_DEFAULT_BLIST_GROUP_NAME);
 		purple_blist_add_group(mm_group, NULL);
 	}
 	
@@ -2919,12 +2940,164 @@ mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
 
 static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
 
+
+void
+mm_search_results_send_im(PurpleConnection *pc, GList *row, void *user_data)
+{
+	PurpleAccount *account = purple_connection_get_account(pc);
+	const gchar *who = g_list_nth_data(row, 0);
+	PurpleIMConversation *imconv;
+	
+	imconv = purple_conversations_find_im_with_account(who, account);
+	if (imconv == NULL) {
+		imconv = purple_im_conversation_new(account, who);
+	}
+	purple_conversation_present(PURPLE_CONVERSATION(imconv));
+}
+
+// void
+// mm_search_results_get_info(PurpleConnection *pc, GList *row, void *user_data)
+// {
+	// mm_get_info(pc, g_list_nth_data(row, 0));
+// }
+
+void
+mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
+{
+	PurpleAccount *account = purple_connection_get_account(pc);
+	const gchar *username = g_list_nth_data(row, 0);
+	const gchar *first_name = g_list_nth_data(row, 1);
+	const gchar *last_name = g_list_nth_data(row, 2);
+	const gchar *nickname = g_list_nth_data(row, 3);
+	gchar *full_name;
+	
+	if (!purple_blist_find_buddy(account, username)) {
+		purple_blist_request_add_buddy(account, username, MATTERMOST_DEFAULT_BLIST_GROUP_NAME, nickname);
+	}
+	
+	full_name = g_strconcat(first_name ? first_name : "", (first_name && *first_name) ? " " : "", last_name, NULL);
+	if (*full_name) {
+		purple_serv_got_alias(pc, username, full_name);
+	}
+	g_free(full_name);
+}
+
 static void
 mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	PurpleBuddy *buddy = user_data;
-	//TODO
-	(void) buddy;
+	gchar *search_term = user_data;
+	GList *users, *i;
+	PurpleNotifySearchResults *results;
+	PurpleNotifySearchColumn *column;
+	
+	// api docs says this should be an object response, but the api returns an array
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		JsonObject *obj = json_node_get_object(node);
+		if (json_object_has_member(obj, "status_code")) {
+			purple_notify_error(ma->pc, _("Search Error"), _("There was an error searching for the user"), json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+			return;
+		}
+		
+		users = json_object_get_values(obj);
+	} else {
+		JsonArray *arr = json_node_get_array(node);
+		
+		users = json_array_get_elements(arr);
+	}
+	
+	if (users == NULL) {
+		gchar *primary_text = g_strdup_printf(_("Your search for the user \"%s\" returned no results"), search_term);
+		purple_notify_warning(ha->pc, _("No users found"), primary_text, "", purple_request_cpar_from_connection(ha->pc));
+		g_free(primary_text);
+		
+		g_free(search_term);
+		return;
+	}
+	
+	results = purple_notify_searchresults_new();
+	if (results == NULL)
+	{
+		g_list_free(users);
+		// This UI can't show search results
+		return;
+	}
+	
+	/* columns: username, First Name, Last Name */
+	column = purple_notify_searchresults_column_new(_("Username"));
+	purple_notify_searchresults_column_add(results, column);
+	column = purple_notify_searchresults_column_new(_("First Name"));
+	purple_notify_searchresults_column_add(results, column);
+	column = purple_notify_searchresults_column_new(_("Last Name"));
+	purple_notify_searchresults_column_add(results, column);
+	column = purple_notify_searchresults_column_new(_("Nickname"));
+	purple_notify_searchresults_column_add(results, column);
+	
+	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_ADD, mm_search_results_add_buddy);
+	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_INFO, mm_search_results_get_info);
+	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_IM, mm_search_results_send_im);
+	
+	for (i = users; i; i = i->next) {
+		JsonNode *usernode = i->data;
+		JsonObject *user = json_node_get_object(usernode);
+		const gchar *username = json_object_get_string_member(user, "username");
+		
+		GList *row = NULL;
+		
+		row = g_list_append(row, g_strdup(username));
+		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "first_name")));
+		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "last_name")));
+		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "nickname")));
+		
+		purple_notify_searchresults_row_add(results, row);
+		
+		if (!g_hash_table_contains(ma->usernames_to_ids, username)) {
+			const gchar *id = json_object_get_string_member(user, "id");
+			g_hash_table_replace(ma->ids_to_usernames, g_strdup(id), g_strdup(username));
+			g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(id));
+		}
+	}
+	
+	purple_notify_searchresults(ma->pc, NULL, search_term, NULL, results, NULL, NULL);
+	
+	g_list_free(users);
+	g_free(search_term);
+}
+
+
+void
+mm_search_users_text(MattermostAccount *ma, const gchar *text)
+{
+	JsonObject *obj = json_object_new();
+	gchar *url;
+	gchar *postdata;
+	
+	json_object_set_string_member(obj, "term", text);
+	json_object_set_boolean_member(obj, "allow_inactive", TRUE);
+	postdata = json_object_to_string(obj);
+	
+	url = g_strdup_printf("https://%s/api/v3/users/search", ma->server);
+	mm_fetch_url(ma, url, postdata, mm_got_add_buddy_search, g_strdup(text));
+	g_free(url);
+	
+	g_free(postdata);
+	json_object_unref(obj);
+}
+
+void
+mm_search_users(PurpleProtocolAction *action)
+{
+	PurpleConnection *pc = purple_protocol_action_get_connection(action);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	
+	purple_request_input(pc, _("Search for users..."),
+					   _("Search for users..."),
+					   NULL,
+					   NULL, FALSE, FALSE, NULL,
+					   _("_Search"), G_CALLBACK(mm_search_users_text),
+					   _("_Cancel"), NULL,
+					   purple_request_cpar_from_connection(pc),
+					   ma);
+
 }
 
 static void
@@ -3004,19 +3177,8 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 			g_free(url);
 		} else {
 			// Doesn't look like a username, do a search
-			JsonObject *obj = json_object_new();
-			gchar *postdata;
-			
-			json_object_set_string_member(obj, "term", buddy_name);
-			json_object_set_boolean_member(obj, "allow_inactive", TRUE);
-			postdata = json_object_to_string(obj);
-			
-			url = g_strdup_printf("https://%s/api/v3/users/search", ma->server);
-			mm_fetch_url(ma, url, postdata, mm_got_add_buddy_search, buddy);
-			g_free(url);
-			
-			g_free(postdata);
-			json_object_unref(obj);
+			mm_search_users_text(ma, buddy_name);
+			purple_blist_remove_buddy(buddy);
 		}
 		
 		return;
@@ -3226,6 +3388,24 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	return PURPLE_CMD_RET_OK;
 }
 
+static GList *
+mm_actions(
+#if !PURPLE_VERSION_CHECK(3, 0, 0)
+PurplePlugin *plugin, gpointer context
+#else
+PurpleConnection *pc
+#endif
+)
+{
+	GList *m = NULL;
+	PurpleProtocolAction *act;
+
+	act = purple_protocol_action_new(_("Search for friends..."), mm_search_users);
+	m = g_list_append(m, act);
+
+	return m;
+}
+
 static gboolean
 plugin_load(PurplePlugin *plugin, GError **error)
 {
@@ -3319,6 +3499,7 @@ plugin_init(PurplePlugin *plugin)
 	if (info == NULL) {
 		plugin->info = info = g_new0(PurplePluginInfo, 1);
 	}
+	info->actions = mm_actions;
 	info->extra_info = prpl_info;
 	#if PURPLE_MINOR_VERSION >= 5
 		prpl_info->struct_size = sizeof(PurplePluginProtocolInfo);
@@ -3468,6 +3649,7 @@ mm_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 static void 
 mm_protocol_client_iface_init(PurpleProtocolClientIface *prpl_info)
 {
+	prpl_info->get_actions = mm_actions;
 	prpl_info->get_account_text_table = mm_get_account_text_table;
 }
 
