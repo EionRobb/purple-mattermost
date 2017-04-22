@@ -379,6 +379,10 @@ mm_markdown_to_html(const gchar *markdown)
 	static gboolean markdown_version_checked = FALSE;
 	static gboolean markdown_version_safe = FALSE;
 	
+	if (markdown == NULL) {
+		return NULL;
+	}
+	
 	if (!markdown_version_checked) {
 		gchar **markdown_version_split = g_strsplit_set(	markdown_version, ". ", -1);
 		gchar *last_part;
@@ -613,13 +617,17 @@ mm_update_cookies(MattermostAccount *ma, const GList *cookie_headers)
 		cookie_start = cur->data;
 		
 		cookie_end = strchr(cookie_start, '=');
-		cookie_name = g_strndup(cookie_start, cookie_end-cookie_start);
-		cookie_start = cookie_end + 1;
-		cookie_end = strchr(cookie_start, ';');
-		cookie_value= g_strndup(cookie_start, cookie_end-cookie_start);
-		cookie_start = cookie_end;
+		if (cookie_end != NULL) {
+			cookie_name = g_strndup(cookie_start, cookie_end-cookie_start);
+			cookie_start = cookie_end + 1;
+			cookie_end = strchr(cookie_start, ';');
+			if (cookie_end != NULL) {
+				cookie_value = g_strndup(cookie_start, cookie_end-cookie_start);
+				cookie_start = cookie_end;
 
-		g_hash_table_replace(ma->cookie_table, cookie_name, cookie_value);
+				g_hash_table_replace(ma->cookie_table, cookie_name, cookie_value);
+			}
+		}
 	}
 }
 
@@ -644,13 +652,17 @@ mm_update_cookies(MattermostAccount *ma, const gchar *headers)
 	{
 		cookie_start += 14;
 		cookie_end = strchr(cookie_start, '=');
-		cookie_name = g_strndup(cookie_start, cookie_end-cookie_start);
-		cookie_start = cookie_end + 1;
-		cookie_end = strchr(cookie_start, ';');
-		cookie_value= g_strndup(cookie_start, cookie_end-cookie_start);
-		cookie_start = cookie_end;
-
-		g_hash_table_replace(ma->cookie_table, cookie_name, cookie_value);
+		if (cookie_end != NULL) {
+			cookie_name = g_strndup(cookie_start, cookie_end-cookie_start);
+			cookie_start = cookie_end + 1;
+			cookie_end = strchr(cookie_start, ';');
+			if (cookie_end != NULL) {
+				cookie_value = g_strndup(cookie_start, cookie_end-cookie_start);
+				cookie_start = cookie_end;
+				
+				g_hash_table_replace(ma->cookie_table, cookie_name, cookie_value);
+			}
+		}
 	}
 }
 #endif
@@ -872,7 +884,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		const gchar *name = json_object_get_string_member(channel, "display_name");
 		const gchar *room_type = json_object_get_string_member(channel, "type");
 		
-		if (*room_type == 'D') {
+		if (room_type && *room_type == 'D') {
 			if (!g_hash_table_contains(ma->one_to_ones, id)) {
 				gchar **buddy_names = g_strsplit(json_object_get_string_member(channel, "name"), "__", 2);
 				gchar *user_id = NULL;
@@ -1357,6 +1369,9 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		
 		purple_roomlist_room_add_field(roomlist, room, id);
 		purple_roomlist_room_add_field(roomlist, room, name);
+		if (room_type == NULL) {
+			room_type = "";
+		}
 		switch(*room_type) {
 			case 'O': type_str = _("Open"); break;
 			case 'P': type_str = _("Private"); break;
@@ -1937,7 +1952,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 					return;
 				} else if (ma->packet_code == 137) {
 					// Ping
-					gint ping_frame_len;
+					gint ping_frame_len = 0;
 					length_code = 0;
 					purple_ssl_read(conn, &length_code, 1);
 					if (length_code <= 125) {
@@ -2558,9 +2573,8 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	}
 	
 	chatconv = purple_serv_got_joined_chat(pc, g_str_hash(id), name ? name : id);
-	if (id != NULL) {
-		purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
-	}
+	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
+	
 	if (team_id != NULL) {
 		purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
 	}
