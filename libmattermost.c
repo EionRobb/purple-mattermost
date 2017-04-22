@@ -1136,7 +1136,6 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		JsonObject *broadcast = json_object_get_object_member(obj, "broadcast");
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		const gchar *user_id = mm_data_or_broadcast_string("user_id");
-		const gchar *remover_id = mm_data_or_broadcast_string("remover_id");
 		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 #undef	mm_data_or_broadcast_string
