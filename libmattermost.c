@@ -3007,7 +3007,7 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 	
 	if (users == NULL) {
 		gchar *primary_text = g_strdup_printf(_("Your search for the user \"%s\" returned no results"), search_term);
-		purple_notify_warning(ha->pc, _("No users found"), primary_text, "", purple_request_cpar_from_connection(ha->pc));
+		purple_notify_warning(ma->pc, _("No users found"), primary_text, "", purple_request_cpar_from_connection(ma->pc));
 		g_free(primary_text);
 		
 		g_free(search_term);
