@@ -2979,8 +2979,11 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 {
 	PurpleConnection *pc = NULL;
 	MattermostAccount *ma = NULL;
-	const gchar *room_id = NULL;
-	// JsonObject *data;
+	const gchar *channel_id = NULL;
+	const gchar *team_id = NULL;
+	JsonObject *data;
+	gchar *postdata;
+	gchar *url;
 	
 	pc = purple_conversation_get_connection(conv);
 	if (pc == NULL) {
@@ -2991,50 +2994,56 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 		return PURPLE_CMD_RET_FAILED;
 	}
 	
-	room_id = purple_conversation_get_data(conv, "id");
-	if (room_id == NULL) {
+	channel_id = purple_conversation_get_data(conv, "id");
+	if (channel_id == NULL) {
 		if (PURPLE_IS_IM_CONVERSATION(conv)) {
-			room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
+			channel_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
 		} else {
-			room_id = purple_conversation_get_name(conv);
-			if (g_hash_table_lookup(ma->group_chats_rev, room_id)) {
+			channel_id = purple_conversation_get_name(conv);
+			if (g_hash_table_lookup(ma->group_chats_rev, channel_id)) {
 				// Convert friendly name into id
-				room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);
+				channel_id = g_hash_table_lookup(ma->group_chats_rev, channel_id);
 			}
 		}
 	}
-	if (room_id == NULL) {
+	if (channel_id == NULL) {
 		return PURPLE_CMD_RET_FAILED;
 	}
 	
-	return PURPLE_CMD_RET_FAILED;
-	//return PURPLE_CMD_RET_OK; //TODO
+	team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
+	if (team_id == NULL) {
+		return PURPLE_CMD_RET_FAILED;
+	}
+	
+	data = json_object_new();
+	json_object_set_string_member(data, "command", cmd);
+	json_object_set_string_member(data, "channel_id", channel_id);
+	postdata = json_object_to_string(data);
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/commands/execute", NULL);
+	mm_fetch_url(ma, url, postdata, NULL, NULL);
+	g_free(url);
+	
+	g_free(postdata);
+	json_object_unref(data);
+	
+	return PURPLE_CMD_RET_OK;
 }
 
 static gboolean
 plugin_load(PurplePlugin *plugin, GError **error)
 {
-						
-	// purple_cmd_register("create", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("create <name>:  Create a new channel"), NULL);
-						
-	// purple_cmd_register("invite", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("invite <username>:  Invite user to join channel"), NULL);
+	
+	purple_cmd_register("invite_people", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("invite_people <username>:  Invite user to join channel"), NULL);
 						
 	purple_cmd_register("join", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_slash_command,
 						_("join <name>:  Join a channel"), NULL);
 						
-	// purple_cmd_register("kick", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("kick <username>:  Remove someone from channel"), NULL);
-	
 	purple_cmd_register("leave", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
@@ -3045,30 +3054,30 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
 						_("part:  Leave the channel"), NULL);
 	
-	// purple_cmd_register("me", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("me <action>:  Display action text"), NULL);
+	purple_cmd_register("me", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("me <action>:  Display action text"), NULL);
 	
-	// purple_cmd_register("msg", "ss", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("msg <username> <message>:  Direct message someone"), NULL);
-	
-	// purple_cmd_register("mute", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("mute <username>:  Mute someone in channel"), NULL);
-	
-	// purple_cmd_register("unmute", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						// PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						// MATTERMOST_PLUGIN_ID, mm_slash_command,
-						// _("unmute <username>:  Un-mute someone in channel"), NULL);
+	purple_cmd_register("msg", "ws", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("msg <username> <message>:  Direct message someone"), NULL);
 	
 	purple_cmd_register("topic", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
 						_("topic <description>:  Set the channel topic description"), NULL);
+	
+	purple_cmd_register("echo", "sw", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("echo message <delay>:  Post a message as yourself, optionally adding a delay"), NULL);
+	
+	purple_cmd_register("shrug", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("shrug message:  Post a message as yourelf followed by 'shrug'"), NULL);
 	
 	return TRUE;
 }
