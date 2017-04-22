@@ -886,7 +886,7 @@ mm_get_first_team_id(MattermostAccount *ma)
 }
 
 PurpleGroup* mm_get_or_create_default_group();
-
+static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
@@ -936,6 +936,9 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 				
 				//TODO if buddy is still NULL, look for details by channel_id
 			}
+			
+			//fetch offline history
+			mm_get_history_of_room(ma, team_id, id, ma->last_load_last_message_timestamp);
 		} else {
 			if (!g_hash_table_contains(ma->group_chats, id)) {
 				PurpleChat *chat = NULL;
@@ -2288,7 +2291,6 @@ mm_get_chat_name(GHashTable *data)
 }
 
 
-static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
 
 static void 
 mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
