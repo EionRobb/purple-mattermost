@@ -149,6 +149,7 @@ json_object_to_string(JsonObject *obj)
 #define purple_serv_got_joined_chat(pc, id, name)  PURPLE_CONV_CHAT(serv_got_joined_chat(pc, id, name))
 #define purple_conversations_find_chat(pc, id)  PURPLE_CONV_CHAT(purple_find_chat(pc, id))
 #define purple_serv_got_chat_in                    serv_got_chat_in
+#define purple_serv_got_chat_left                  serv_got_chat_left
 #define purple_chat_conversation_add_user     purple_conv_chat_add_user
 #define purple_chat_conversation_add_users    purple_conv_chat_add_users
 #define purple_chat_conversation_remove_user  purple_conv_chat_remove_user
@@ -189,6 +190,36 @@ purple_chat_conversation_find_user(PurpleChatConversation *chat, const char *nam
 #define PURPLE_IS_BUDDY                PURPLE_BLIST_NODE_IS_BUDDY
 #define PURPLE_IS_CHAT                 PURPLE_BLIST_NODE_IS_CHAT
 #define purple_chat_get_name_only      purple_chat_get_name
+static inline void
+purple_chat_set_alias(PurpleChat *chat, const char *alias)
+{
+	PurpleBlistUiOps *ops = purple_blist_get_ui_ops();
+	char *new_alias = purple_utf8_strip_unprintables(alias);
+	char *old_alias = chat->alias;
+
+	if (purple_strequal(old_alias, new_alias)) {
+		g_free(new_alias);
+		return;
+	}
+	
+	if ((new_alias != NULL) && (*new_alias != '\0')) {
+		chat->alias = new_alias;
+	} else {
+		chat->alias = NULL;
+		g_free(new_alias); /* could be "\0" */
+	}
+	
+	if (ops) {
+		if (ops->save_node)
+			ops->save_node((PurpleBlistNode*) chat);
+		if (ops->update)
+			ops->update(purple_get_blist(), (PurpleBlistNode *)chat);
+	}
+
+	purple_signal_emit(purple_blist_get_handle(), "blist-node-aliased", chat, old_alias);
+	g_free(old_alias);
+}
+
 #define purple_blist_find_buddy        purple_find_buddy
 #define purple_serv_got_alias                      serv_got_alias
 #define purple_account_set_private_alias    purple_account_set_alias
@@ -821,9 +852,90 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
+PurpleGroup* mm_get_or_create_default_group();
+
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
+
+static void
+mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	gchar *team_id = user_data;
+	JsonArray *channels = json_node_get_array(node);
+	guint i, len = json_array_get_length(channels);
+	PurpleGroup *default_group = mm_get_or_create_default_group();
+			
+	for (i = 0; i < len; i++) {
+		JsonObject *channel = json_array_get_object_element(channels, i);
+		const gchar *id = json_object_get_string_member(channel, "id");
+		const gchar *name = json_object_get_string_member(channel, "display_name");
+		const gchar *room_type = json_object_get_string_member(channel, "type");
+		
+		if (*room_type == 'D') {
+			if (!g_hash_table_contains(ma->one_to_ones, id)) {
+				gchar **buddy_names = g_strsplit(json_object_get_string_member(channel, "name"), "__", 2);
+				gchar *user_id = NULL;
+				gchar *username = NULL;
+				PurpleBuddy *buddy = NULL;
+				
+				if (purple_strequal(buddy_names[0], ma->self_user_id)) {
+					user_id = buddy_names[1];
+				} else {
+					user_id = buddy_names[0];
+				}
+				if (user_id != NULL) {
+					username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+					if (username != NULL) {
+						buddy = purple_blist_find_buddy(ma->account, username);
+						if (buddy == NULL) {
+							buddy = purple_buddy_new(ma->account, username, NULL);
+							purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+						}
+						
+						purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", id);
+						g_hash_table_replace(ma->one_to_ones, g_strdup(id), g_strdup(username));
+						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(id));
+					}
+				}
+				
+				g_strfreev(buddy_names);
+				
+				//TODO if buddy is still NULL, look for details by channel_id
+			}
+		} else {
+			if (!g_hash_table_contains(ma->group_chats, id)) {
+				PurpleChat *chat = NULL;
+				GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+				
+				g_hash_table_insert(defaults, "team_id", g_strdup(team_id));
+				g_hash_table_insert(defaults, "id", g_strdup(id));
+				g_hash_table_insert(defaults, "name", g_strdup(name));
+				
+				chat = purple_chat_new(ma->account, name, defaults);
+				purple_blist_add_chat(chat, default_group, NULL);
+				
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "room_id", id);
+				g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
+				g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
+				
+				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
+			}
+		}
+	}
+		
+	g_free(team_id);
+}
+
+static void
+mm_get_open_channels_for_team(MattermostAccount *ma, const gchar *team_id)
+{
+	gchar *url;
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/", NULL);
+	mm_fetch_url(ma, url, NULL, mm_add_channels_to_blist, g_strdup(team_id));
+	g_free(url);
+}
 
 static void
 mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -840,6 +952,8 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		const gchar *display_name = json_object_get_string_member(team, "display_name");
 		
 		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(display_name));
+		
+		mm_get_open_channels_for_team(ma, team_id);
 	}
 	
 	g_list_free(teams);
@@ -991,6 +1105,21 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 				// PurpleChatUser *cb;
 				
+				if (room_name == NULL) {
+					PurpleChat *chat = purple_blist_find_chat(ma->account, channel_id);
+					
+					room_name = json_object_get_string_member(data, "channel_display_name");
+					
+					g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(room_name));
+					g_hash_table_replace(ma->group_chats_rev, g_strdup(room_name), g_strdup(channel_id));
+					
+					if (chat != NULL) {
+						GHashTable *defaults = purple_chat_get_components(chat);
+						g_hash_table_insert(defaults, "name", g_strdup(room_name));
+						
+						purple_chat_set_alias(chat, room_name);
+					}
+				}
 				if (chatconv == NULL) {
 					chatconv = purple_conversations_find_chat_with_account(room_name, ma->account);
 				}
@@ -1048,8 +1177,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	
 	return update_at;
 }
-
-PurpleGroup* mm_get_or_create_default_group();
 
 static void
 mm_got_hello_user_statuses(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -1130,6 +1257,21 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		
 		if (chatconv != NULL) {
 			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
+		} else if (purple_strequal(user_id, ma->self_user_id) && !g_hash_table_contains(ma->group_chats, channel_id)) {
+			const gchar *team_id = mm_data_or_broadcast_string("team_id");
+			PurpleChat *chat = NULL;
+			GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+			
+			g_hash_table_insert(defaults, "team_id", g_strdup(team_id));
+			g_hash_table_insert(defaults, "id", g_strdup(channel_id));
+			
+			chat = purple_chat_new(ma->account, channel_id, defaults);
+			purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
+			
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "room_id", channel_id);
+			g_hash_table_replace(ma->group_chats, g_strdup(channel_id), NULL);
+			
+			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
 		}
 		
 	} else if (purple_strequal(event, "user_removed")) {
@@ -1141,6 +1283,12 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 #undef	mm_data_or_broadcast_string
 		if (chatconv != NULL) {
 			purple_chat_conversation_remove_user(chatconv, username, NULL);
+			
+			if (purple_strequal(user_id, ma->self_user_id)) {
+				purple_serv_got_chat_left(ma->pc, g_str_hash(channel_id));
+				g_hash_table_remove(ma->group_chats, channel_id);
+				purple_blist_remove_chat(purple_blist_find_chat(ma->account, channel_id));
+			}
 		}
 		
 	} else if (purple_strequal(event, "hello")) {
