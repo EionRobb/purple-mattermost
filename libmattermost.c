@@ -308,6 +308,7 @@ typedef struct {
 	gchar *self_user_id;
 	gchar *self_username;
 	
+	gchar *last_channel_id;
 	gint64 last_message_timestamp;
 	gint64 last_load_last_message_timestamp;
 	
@@ -878,7 +879,7 @@ static const gchar *
 mm_get_first_team_id(MattermostAccount *ma)
 {
 	GList *team_ids = g_hash_table_get_keys(ma->teams);
-	const gchar *first_team_id = team_ids->data;
+	const gchar *first_team_id = team_ids ? team_ids->data : NULL;
 	
 	g_list_free(team_ids);
 	
@@ -995,6 +996,8 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
 	g_list_free(teams);
+	
+	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
 }
 
 static void
@@ -1033,8 +1036,6 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	g_hash_table_replace(ma->ids_to_usernames, g_strdup(ma->self_user_id), g_strdup(ma->self_username));
 	g_hash_table_replace(ma->usernames_to_ids, g_strdup(ma->self_username), g_strdup(ma->self_user_id));
 	
-	//TODO start websocket
-	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
 	mm_start_socket(ma);
 	
 	url = g_strconcat("https://", ma->server, "/api/v3/teams/all", NULL);
@@ -1528,28 +1529,13 @@ void
 mm_set_idle(PurpleConnection *pc, int time)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-	
-	JsonObject *data = json_object_new();
-	gchar *url, *postdata;
 	const gchar *channel_id = "";
-	const gchar *team_id = mm_get_first_team_id(ma);
 	
 	if (time < 20) {
-		channel_id = "TODO";
+		channel_id = ma->last_channel_id;
 	}
 	
-	json_object_set_string_member(data, "channel_id", channel_id);
-	json_object_set_string_member(data, "prev_channel_id", "");
-	json_object_set_int_member(data, "time", 0);
-	
-	postdata = json_object_to_string(data);
-	
-	url = g_strconcat("https://", ma->server, "/api/v3/teams/", team_id, "/channels/view", NULL);
-	//mm_fetch_url(ma, url, postdata, NULL, NULL);
-	
-	g_free(url);
-	g_free(postdata);
-	json_object_unref(data);
+	mm_mark_room_messages_read(ma, channel_id);
 }
 
 void
@@ -1800,6 +1786,7 @@ mm_close(PurpleConnection *pc)
 	}
 	
 	g_hash_table_destroy(ma->cookie_table); ma->cookie_table = NULL;
+	g_free(ma->last_channel_id); ma->last_channel_id = NULL;
 	g_free(ma->username); ma->username = NULL;
 	g_free(ma->server); ma->server = NULL;
 	g_free(ma->frame); ma->frame = NULL;
@@ -2634,7 +2621,34 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 static void
 mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 {
-
+	JsonObject *obj;
+	gchar *url;
+	gchar *postdata;
+	const gchar *team_id = g_hash_table_lookup(ma->channel_teams, room_id);
+	
+	if (team_id == NULL) {
+		team_id = mm_get_first_team_id(ma);
+	}
+	
+	if (team_id == NULL) {
+		return;
+	}
+	
+	obj = json_object_new();
+	json_object_set_string_member(obj, "channel_id", room_id);
+	json_object_set_string_member(obj, "prev_channel_id", ma->last_channel_id);
+	json_object_set_int_member(obj, "time", purple_presence_get_idle_time(purple_account_get_presence(ma->account)));
+	postdata = json_object_to_string(obj);
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/view", NULL);
+	mm_fetch_url(ma, url, postdata, NULL, NULL);
+	
+	g_free(postdata);
+	g_free(url);
+	json_object_unref(obj);
+	
+	g_free(ma->last_channel_id);
+	ma->last_channel_id = g_strdup(room_id);
 }
 
 static void
