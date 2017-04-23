@@ -1,37 +1,34 @@
 
-# Pidgin-Mattermost plug-in by Eion Robb 
-
-**XXXX Work in progress** 
+# Pidgin-Mattermost plug-in by Eion Robb (Alpha Release)  
 
 Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium, bitlbee) with Mattermost server. 
 
 ## Features 
 
+**Setup**
+
+- Connects to Mattermost server using email/username & password 
+- Connects to Mattermost server using AD/LDAP credentials 
+- Ability to view public, private and multi-party direct message channels in Buddy List 
+
+**Core Communication**
+
+- Ability to send and receive messages 
+- Ability to send and receive weblinks 
+
 **Group Discussions**
 
-- Ability to search for channels by team (beta) 
-- Ability to send and received messages (beta) 
-- Ability to join a public or private channels (beta) 
-- Ability to add members to a public or private channel from a list of users, identifiable by First and Last Name (under development) 
+- Ability to join a public and private channels and multi-party direct message channels by right-clicking on channel in Buddy List and selecting **Join** 
 
 **1-1 Discussions**
 
-- Ability to send and receive 1-1 messages (beta) 
-- Ability to begin a new 1-1 discussion by selecting from a list of users, identifiable by First and Last Name (under development) 
-
-**Sign-in**
-
-- Ability to sign-in using username/email & password, or AD/LDAP credentials (under development) 
+- Ability to start Direct Message discussions from a Room by right-clicking on the user name and selecting **IM**
 
 ## Screenshots
 
 ![s](https://cloud.githubusercontent.com/assets/177788/25235037/ccc74a20-2598-11e7-8d31-349808570c8a.png)
 
-## Changelog 
-
-- April 18, 2017 - Project started 
-
-## Install Guides
+## End User Install Guides
 
 Please see install guides for setting up Pidgin-Mattermost 
 
@@ -41,8 +38,17 @@ Please see install guides for setting up Pidgin-Mattermost
 
 ### Developer Install Guide 
  
-The following pre-requisites are required for developers modifying or extending this project: 
+For modifying or extending this project please follow the [Linux Client Install Guide](https://github.com/it33/purple-mattermost/blob/patch-3/INSTALL.md#linux-client-install-guide) to set up your environment. 
 
-- Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
-- libpurple version 2.9.0 or later
-- libpurple, libjson-glib, glib, libmarkdown2 aka discount
+## Changelog 
+
+- April 18, 2017 - Pidgin 0.0 - Project started 
+- April 23, 2017 - Pidgin 0.1 - Alpha Release 
+
+## Verification 
+
+The following table outlines the results of verification tests completed on different client platforms. 
+
+| Version | Verification Plan | Analyst | Verification Date | Bugs Found |  
+| :--- | :--- | :--- | :--- | :--- | 
+| Pidgin 0.0 | N/A | Ian Tien | April 23, 2017 | N/A | 
