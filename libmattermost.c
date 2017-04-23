@@ -887,6 +887,7 @@ mm_get_first_team_id(MattermostAccount *ma)
 
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
+static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
@@ -924,6 +925,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 						if (buddy == NULL) {
 							buddy = purple_buddy_new(ma->account, username, NULL);
 							purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+							mm_add_buddy(ma->pc, buddy, NULL, NULL);
 						}
 						
 						purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", id);
@@ -2298,6 +2300,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gchar *channel_id = user_data;
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 	JsonObject *obj = json_node_get_object(node);
+	PurpleGroup *default_group = mm_get_or_create_default_group();
 	
 	if (!json_object_has_member(obj, "status_code")) {
 		GList *users = json_object_get_values(obj);
@@ -2314,13 +2317,29 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			if (!g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 				g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
 				g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
+				
+				if (chatconv == NULL && g_hash_table_contains(ma->one_to_ones, channel_id)) {
+					//Probably a direct message, add them to the buddy list
+					PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
+					if (buddy == NULL) {
+						buddy = purple_buddy_new(ma->account, username, json_object_get_string_member(user, "nickname"));
+						purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+						mm_add_buddy(ma->pc, buddy, NULL, NULL);
+					}
+					
+					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", channel_id);
+				}
 			}
 			
-			users_list = g_list_prepend(users_list, g_strdup(username));
-			flags_list = g_list_prepend(flags_list, GINT_TO_POINTER(mm_role_to_purple_flag(ma, roles)));
+			if (chatconv != NULL) {
+				users_list = g_list_prepend(users_list, g_strdup(username));
+				flags_list = g_list_prepend(flags_list, GINT_TO_POINTER(mm_role_to_purple_flag(ma, roles)));
+			}
 		}
-		
-		purple_chat_conversation_add_users(chatconv, users_list, NULL, flags_list, FALSE);
+
+		if (chatconv != NULL) {
+			purple_chat_conversation_add_users(chatconv, users_list, NULL, flags_list, FALSE);
+		}
 		
 		while (users_list != NULL) {
 			g_free(users_list->data);
@@ -2525,14 +2544,9 @@ mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_i
 		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
 	}
 	
-	if (g_hash_table_lookup(ma->group_chats, channel_id)) {
-		// This is a group chat, get users in room
-		// (will call fetch offline history later)
-		mm_get_users_of_room(ma, team_id, channel_id);
-	} else if (ma->last_load_last_message_timestamp > 0) {
-		// Fetch offline history
-		mm_get_history_of_room(ma, team_id, channel_id, mm_get_room_last_timestamp(ma, channel_id));
-	}
+	// Fetch offline history
+	// but first, get users in room (will fetch offline history after)
+	mm_get_users_of_room(ma, team_id, channel_id);
 	
 	url = g_string_new("https://");
 	g_string_append(url, ma->server);
@@ -2940,7 +2954,6 @@ mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
 	g_string_free(url, TRUE);
 }
 
-static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
 
 
 void
