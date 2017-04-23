@@ -34,13 +34,14 @@ You should see a welcome screen from Pidgin with help instructions on how to get
 
 #### 1) From the Pidgin Welcome Screen, click "Add..." to add an account
 
-![image](https://cloud.githubusercontent.com/assets/177788/25308345/beb228ea-2766-11e7-9e3c-12564807c5d4.png)
+<img src="https://cloud.githubusercontent.com/assets/177788/25308345/beb228ea-2766-11e7-9e3c-12564807c5d4.png" width="400">
+
 
 #### 2) On the "Add Account" screen, under Protocol select "Mattermost" and enter credentials 
 
 Select Mattermost from the dropdown list under Protocol: 
 
-![image](https://cloud.githubusercontent.com/assets/177788/25308346/c8836974-2766-11e7-8a50-2cfc837fe0ac.png)
+<img src="https://cloud.githubusercontent.com/assets/177788/25308346/c8836974-2766-11e7-8a50-2cfc837fe0ac.png" width="400">
 
 Enter: 
 
