@@ -69,7 +69,7 @@ Restart Pidgin to enable the plugin.
 
 You should see a welcome screen from Pidgin with help instructions on how to get started: 
 
-![image](https://cloud.githubusercontent.com/assets/177788/25308341/b3c5dd14-2766-11e7-980f-6919f5d61fbb.png)
+<img src="https://cloud.githubusercontent.com/assets/177788/25308341/b3c5dd14-2766-11e7-980f-6919f5d61fbb.png" width="600">
 
 #### 5) Enter your Mattermost account 
 
@@ -97,7 +97,7 @@ When complete, click **Add** to complete the creation of your new Mattermost acc
 
 On the **Accounts** screen double-click on your Mattermost server to join. 
 
-![image](https://cloud.githubusercontent.com/assets/177788/25308357/0ebd9fe0-2767-11e7-8d20-f7d5567c5faf.png)
+<img src="https://cloud.githubusercontent.com/assets/177788/25308357/0ebd9fe0-2767-11e7-8d20-f7d5567c5faf.png" width="600">
 
 Once you have joined, Pidgin's **Buddy List** should appear, and include a list of all public and private channels in Mattermost, including multi-person direct message channels. 
 
@@ -105,7 +105,7 @@ Once you have joined, Pidgin's **Buddy List** should appear, and include a list 
 
 Right click and select **Join** to join the channel. 
 
-![image](https://cloud.githubusercontent.com/assets/177788/25313965/9a1cbe0e-27ee-11e7-9ce8-13031af4aff3.png)
+<img src="https://cloud.githubusercontent.com/assets/177788/25313965/9a1cbe0e-27ee-11e7-9ce8-13031af4aff3.png" width="600">
 
 The channel is linked to Mattermost and messages you post appear on the Mattermost server. 
 
