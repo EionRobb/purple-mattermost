@@ -53,4 +53,4 @@ The following table outlines the results of verification tests completed on diff
 | :--- | :--- | :--- | :--- | :--- | 
 | Pidgin 0.0 | [Win10 Tests v1.0](VERIFICATION.md#win10-tests-v10) | Ian Tien | April 23, 2017 | [#4](https://github.com/EionRobb/purple-mattermost/issues/4) | 
 
-Contributions to testing and verifying this projects are highly welcome, read our [verification contributions documentation to learn how you can help.](https://github.com/it33/purple-mattermost/blob/patch-3/VERIFICATION.md#verification-contributions) 
+Contributions to testing and verifying this projects are highly welcome, read our [verification contributions documentation to learn how you can help.](VERIFICATION.md#verification-contributions) 
