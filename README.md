@@ -23,7 +23,6 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 - Ability to sign-in using username/email & password, or AD/LDAP credentials (under development) 
 
-
 ## Screenshots
 
 ![s](https://cloud.githubusercontent.com/assets/177788/25235037/ccc74a20-2598-11e7-8d31-349808570c8a.png)
@@ -32,14 +31,7 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 - April 18, 2017 - Project started 
 
-## Requirements
-
-- Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
-- libpurple version 2.9.0 or later
-- libpurple, libjson-glib, glib, libmarkdown2 aka discount
-
 ## Install Guides
-
 
 ### Server Install
 
@@ -113,7 +105,6 @@ The channel is linked to Mattermost and messages you post appear on the Mattermo
 
 The members of the channel appear to the right of the conversation. Right-click and select **IM** to open a direct message channel with anyone in the room. 
 
-
 ### Linux Client Install Guide 
  
 For people using Debian-based distributions of Linux operating systems, you can install the Pidgin-Mattermost plug using the following commands from a terminal: 
@@ -124,5 +115,10 @@ git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-matterm
 make && sudo make install
 ```
 
+### Developer Install Guide 
+ 
+The following pre-requisites are required for developers modifying or extending this project: 
 
-
+- Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
+- libpurple version 2.9.0 or later
+- libpurple, libjson-glib, glib, libmarkdown2 aka discount
