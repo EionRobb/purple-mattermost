@@ -32,13 +32,13 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 Please see install guides for setting up Pidgin-Mattermost 
 
-- [Mattermost Server Install Guide](https://github.com/it33/purple-mattermost/blob/patch-3/INSTALL.md#server-install) 
-- [Windows Client Install Guide](https://github.com/it33/purple-mattermost/blob/patch-3/INSTALL.md#windows-client-install) 
-- [Linux Client Install Guide](https://github.com/it33/purple-mattermost/blob/patch-3/INSTALL.md#linux-client-install-guide)
+- [Mattermost Server Install Guide](INSTALL.md#server-install) 
+- [Windows Client Install Guide](INSTALL.md#windows-client-install) 
+- [Linux Client Install Guide](INSTALL.md#linux-client-install-guide)
 
 ### Developer Install Guide 
  
-For modifying or extending this project please follow the [Linux Client Install Guide](https://github.com/it33/purple-mattermost/blob/patch-3/INSTALL.md#linux-client-install-guide) to set up your environment. 
+For modifying or extending this project please follow the [Linux Client Install Guide](INSTALL.md#linux-client-install-guide) to set up your environment. 
 
 ## Changelog 
 
@@ -51,4 +51,4 @@ The following table outlines the results of verification tests completed on diff
 
 | Version | Verification Plan | Analyst | Verification Date | Bugs Found |  
 | :--- | :--- | :--- | :--- | :--- | 
-| Pidgin 0.0 | N/A | Ian Tien | April 23, 2017 | N/A | 
+| Pidgin 0.0 | [Win10 Tests v1.0](VERIFICATION.md#win10-tests-v10) | Ian Tien | April 23, 2017 | [#4](https://github.com/EionRobb/purple-mattermost/issues/4) | 
