@@ -8,6 +8,7 @@ WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
 
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
+MAKENSIS ?= makensis
 
 REVISION_ID = $(shell hg id -i)
 REVISION_NUMBER = $(shell hg id -n)
@@ -25,6 +26,7 @@ ifeq ($(OS),Windows_NT)
   MATTERMOST_TARGET = libmattermost.dll
   MATTERMOST_DEST = "$(PROGRAMFILES)/Pidgin/plugins"
   MATTERMOST_ICONS_DEST = "$(PROGRAMFILES)/Pidgin/pixmaps/pidgin/protocols"
+  MAKENSIS = "$(PROGRAMFILES)/NSIS/makensis.exe"
 else
 
   UNAME_S := $(shell uname -s)
@@ -74,7 +76,7 @@ PURPLE_C_FILES := libmattermost.c $(C_FILES)
 
 
 
-.PHONY:	all install FAILNOPURPLE clean install-icons
+.PHONY:	all install FAILNOPURPLE clean install-icons installer
 
 all: $(MATTERMOST_TARGET)
 
@@ -101,6 +103,9 @@ install-icons: mattermost16.png mattermost22.png mattermost48.png
 	install mattermost16.png $(MATTERMOST_ICONS_DEST)/16/mattermost.png
 	install mattermost22.png $(MATTERMOST_ICONS_DEST)/22/mattermost.png
 	install mattermost48.png $(MATTERMOST_ICONS_DEST)/48/mattermost.png
+
+installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22.png mattermost48.png
+	$(MAKENSIS) purple-mattermost.nsi
 
 FAILNOPURPLE:
 	echo "You need libpurple development headers installed to be able to compile this plugin"
