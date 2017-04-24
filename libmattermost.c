@@ -1065,6 +1065,64 @@ mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
 	return flags;
 }
 
+typedef struct {
+	gchar *channel_id;
+	gchar *file_id;
+	gchar *sender;
+	gint64 timestamp;
+} MattermostChannelLink;
+
+static void
+mm_got_link_for_channel(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	const gchar *url = json_node_get_string(node);
+	MattermostChannelLink *info = user_data;
+	PurpleMessageFlags msg_flags = (purple_strequal(info->sender, ma->self_username) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
+	
+	if (g_hash_table_contains(ma->group_chats, info->channel_id)) {
+		purple_serv_got_chat_in(ma->pc, g_str_hash(info->channel_id), info->sender, msg_flags, url, info->timestamp);
+	} else {
+		if (msg_flags == PURPLE_MESSAGE_RECV) {
+			purple_serv_got_im(ma->pc, info->sender, url, msg_flags, info->timestamp);
+		} else {
+			const gchar *other_user = g_hash_table_lookup(ma->one_to_ones, info->channel_id);
+			// TODO null check
+			PurpleIMConversation *imconv = purple_conversations_find_im_with_account(other_user, ma->account);
+			PurpleMessage *pmsg = purple_message_new_outgoing(other_user, url, msg_flags);
+			
+			if (imconv == NULL) {
+				imconv = purple_im_conversation_new(ma->account, other_user);
+			}
+			purple_message_set_time(pmsg, info->timestamp);
+			purple_conversation_write_message(PURPLE_CONVERSATION(imconv), pmsg);
+			purple_message_destroy(pmsg);
+		}
+	}
+	
+	g_free(info->channel_id);
+	g_free(info->file_id);
+	g_free(info->sender);
+	g_free(info);
+}
+
+static void
+mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, const gchar *channel_id, const gchar *username, gint64 timestamp)
+{
+	MattermostChannelLink *info = g_new0(MattermostChannelLink, 1);
+	gchar *url;
+	
+	info->channel_id = g_strdup(channel_id);
+	info->file_id = g_strdup(file_id);
+	info->sender = g_strdup(username);
+	info->timestamp = timestamp;
+	
+	url = g_strconcat("https://", ma->server, "/api/v3/files/", purple_url_encode(file_id), "/get_public_link", NULL);
+	
+	mm_fetch_url(ma, url, NULL, mm_got_link_for_channel, info);
+	
+	g_free(url);
+}
+
 
 static gint64 mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id);
 static void mm_set_room_last_timestamp(MattermostAccount *ma, const gchar *room_id, gint64 last_timestamp);
@@ -1135,16 +1193,16 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				message = tmp;
 			}
 			
-			// if (json_object_has_member(post, "file_ids")) {
-				// JsonArray *file_ids = json_object_get_array_member(post, "file_ids");
-				// guint i, len = json_array_get_length(file_ids);
+			if (json_object_has_member(post, "file_ids")) {
+				JsonArray *file_ids = json_object_get_array_member(post, "file_ids");
+				guint i, len = json_array_get_length(file_ids);
 				
-				// for (i = 0; i < len; i++) {
-					// const gchar *file_id = json_array_get_string_element(file_ids, i);
+				for (i = 0; i < len; i++) {
+					const gchar *file_id = json_array_get_string_element(file_ids, i);
 					
-					//mm_fetch_file_link_for_channel(ma, channel_id, file_id);
-				// }
-			// }
+					mm_fetch_file_link_for_channel(ma, file_id, channel_id, username, timestamp);
+				}
+			}
 			
 			if ((channel_type != NULL && *channel_type != 'D') || g_hash_table_contains(ma->group_chats, channel_id)) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
