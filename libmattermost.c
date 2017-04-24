@@ -311,6 +311,7 @@ typedef struct {
 	gchar *last_channel_id;
 	gint64 last_message_timestamp;
 	gint64 last_load_last_message_timestamp;
+	guint idle_timeout;
 	
 	gchar *username;
 	gchar *server;
@@ -976,6 +977,8 @@ mm_get_open_channels_for_team(MattermostAccount *ma, const gchar *team_id)
 	g_free(url);
 }
 
+gboolean mm_idle_updater_timeout(gpointer data);
+
 static void
 mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -998,6 +1001,9 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	g_list_free(teams);
 	
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
+	
+	// Update our idleness every 4.5 minutes
+	ma->idle_timeout = purple_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
 
 static void
@@ -1632,6 +1638,23 @@ mm_set_idle(PurpleConnection *pc, int time)
 	mm_mark_room_messages_read(ma, channel_id);
 }
 
+gboolean
+mm_idle_updater_timeout(gpointer data)
+{
+	PurpleConnection *pc = data;
+	PurpleAccount *account = purple_connection_get_account(pc);
+	PurplePresence *presence = purple_account_get_presence(account);
+	time_t idle_time = purple_presence_get_idle_time(presence);
+	
+	if (idle_time > 0) {
+		idle_time -= time(NULL);
+	}
+	
+	mm_set_idle(pc, idle_time);
+	
+	return TRUE;
+}
+
 void
 mm_set_status(PurpleAccount *account, PurpleStatus *status)
 {
@@ -1841,6 +1864,8 @@ mm_close(PurpleConnection *pc)
 	// PurpleAccount *account;
 	
 	g_return_if_fail(ma != NULL);
+	
+	purple_timeout_remove(ma->idle_timeout);
 	
 	// account = purple_connection_get_account(pc);
 	if (ma->websocket != NULL) purple_ssl_close(ma->websocket);
@@ -2731,7 +2756,6 @@ mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 	obj = json_object_new();
 	json_object_set_string_member(obj, "channel_id", room_id);
 	json_object_set_string_member(obj, "prev_channel_id", ma->last_channel_id);
-	json_object_set_int_member(obj, "time", purple_presence_get_idle_time(purple_account_get_presence(ma->account)));
 	postdata = json_object_to_string(obj);
 	
 	url = g_strconcat("https://", ma->server, "/api/v3/teams/", purple_url_encode(team_id), "/channels/view", NULL);
