@@ -1244,6 +1244,9 @@ mm_got_hello_user_statuses(MattermostAccount *ma, JsonNode *node, gpointer user_
 	g_list_free(ids);
 }
 
+// Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
+#define	mm_data_or_broadcast_string(a) (json_object_has_member(data, (a)) ? json_object_get_string_member(data, (a)) : json_object_get_string_member(broadcast, (a)))
+
 static void
 mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 {
@@ -1252,6 +1255,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 
 	const gchar *event = json_object_get_string_member(obj, "event");
 	JsonObject *data = json_object_get_object_member(obj, "data");
+	JsonObject *broadcast = json_object_get_object_member(obj, "broadcast");
 	
     mm_get_or_create_default_group();
 
@@ -1281,7 +1285,35 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
 		}
 		g_object_unref(post_parser);
-	} else if (purple_strequal(event, "typing")) {
+	} else if (purple_strequal(event, "typing")) {		
+		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
+		const gchar *user_id = mm_data_or_broadcast_string("user_id");
+		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+		
+		if (g_hash_table_contains(ma->group_chats, channel_id)) {
+			// This is a group conversation
+			PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+			if (chatconv != NULL) {
+				PurpleChatUser *cb = purple_chat_conversation_find_user(chatconv, username);
+				PurpleChatUserFlags cbflags;
+
+				if (cb == NULL) {
+					// Getting notified about a buddy we dont know about yet
+					//TODO add buddy
+					return;
+				}
+				cbflags = purple_chat_user_get_flags(cb);
+				
+				//if (is_typing)
+					cbflags |= PURPLE_CHAT_USER_TYPING;
+				//else //TODO
+				//	cbflags &= ~PURPLE_CHAT_USER_TYPING;
+				
+				purple_chat_user_set_flags(cb, cbflags);
+			}
+		} else {
+			purple_serv_got_typing(ma->pc, username, 15, PURPLE_IM_TYPING);
+		}
 		
 	} else if (purple_strequal(event, "status_change")) {
 		const gchar *user_id = json_object_get_string_member(data, "user_id");
@@ -1292,9 +1324,6 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			purple_protocol_got_user_status(ma->account, username, status, NULL);
 		}
 	} else if (purple_strequal(event, "user_added")) {
-// Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
-#define	mm_data_or_broadcast_string(a) (json_object_has_member(data, (a)) ? json_object_get_string_member(data, (a)) : json_object_get_string_member(broadcast, (a)))
-		JsonObject *broadcast = json_object_get_object_member(obj, "broadcast");
 		const gchar *user_id = mm_data_or_broadcast_string("user_id");
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
@@ -1320,12 +1349,10 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		}
 		
 	} else if (purple_strequal(event, "user_removed")) {
-		JsonObject *broadcast = json_object_get_object_member(obj, "broadcast");
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		const gchar *user_id = mm_data_or_broadcast_string("user_id");
 		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-#undef	mm_data_or_broadcast_string
 		if (chatconv != NULL) {
 			purple_chat_conversation_remove_user(chatconv, username, NULL);
 			
@@ -1352,6 +1379,9 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		mm_socket_write_json(ma, data);
 	}
 }
+
+
+#undef	mm_data_or_broadcast_string
 
 PurpleGroup *
 mm_get_or_create_default_group()
