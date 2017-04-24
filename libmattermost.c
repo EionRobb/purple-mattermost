@@ -1129,6 +1129,12 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
 			gchar *message = mm_markdown_to_html(msg_text);
 			
+			if (json_object_get_int_member(post, "edit_at")) {
+				gchar *tmp = g_strconcat(_("Edited: "), message, NULL);
+				g_free(message);
+				message = tmp;
+			}
+			
 			// if (json_object_has_member(post, "file_ids")) {
 				// JsonArray *file_ids = json_object_get_array_member(post, "file_ids");
 				// guint i, len = json_array_get_length(file_ids);
@@ -1261,7 +1267,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		}
 	}
 	
-	if (purple_strequal(event, "posted")) {
+	if (purple_strequal(event, "posted") || purple_strequal(event, "post_edited")) {
 		gint64 last_message_timestamp;
 		JsonParser *post_parser = json_parser_new();
 		const gchar *post_str = json_object_get_string_member(data, "post");
