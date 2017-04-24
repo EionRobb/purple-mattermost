@@ -5,24 +5,36 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 ## Features 
 
-**Setup**
+**Setup & Navigation**
 
-- Connect to Mattermost server using email/username & password 
-- Connect to Mattermost server using AD/LDAP credentials 
-- Ability to view public, private and multi-party direct message channels in Buddy List 
+- Installer for setting up Pidgin-Mattermost with Pidgin.
+- Connect to Mattermost server using email/username & password. 
+- Connect to Mattermost server using AD/LDAP credentials. 
+- Automatically add buddies and joined channels to buddylist.
+- Unjoined channels displayed in Room List picker to be joined.
+- User search via **Accounts > {Mattermost Account} > Search for Users...**
 
 **Core Communication**
 
-- Send and receive messages, including weblinks and emoji  
-- Edit messages 
+- Send and receive messages, including weblinks and emoji.  
+- Display of online/offline/away status. 
+- Sending of read notifications so the server understands users is still online. 
+- Display of messages sent while Pidgin was offline. 
+- Mark messages edited by a Mattermost user as "Edited:"
+- If Mattermost [enables public file links](https://docs.mattermost.com/administration/config-settings.html#enable-public-file-links) (off by default) file sharing links can be displayed in Pidgin. 
 
 **Group Discussions**
 
-- Join a public and private channels and multi-party direct message channels by right-clicking on channel in Buddy List and selecting **Join** 
+- Join a public and private channels and multi-party direct message channels by right-clicking on channel in Buddy List and selecting. 
+
 
 **1-1 Discussions**
 
-- Open Direct Message discussions from a Room by right-clicking on the user name and selecting **IM**
+- Open Direct Message discussions from a Room by right-clicking on the user name and selecting **IM**.
+
+**Advanced Mattermost Features**
+
+- Support for most [built-in Mattermost Slash Commands](https://docs.mattermost.com/developer/slash-commands.html).
 
 ## Screenshots
 
