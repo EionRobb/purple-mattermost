@@ -24,7 +24,7 @@ If your browser displays a warning for downloading an executable file, select "K
 
 #### b) Run the installer file 
 
-The installer will install the Pidgin-Mattermost plugin, add the Mattermost icons to your Pidgin client, and either install the Pidgin Plugin Manager (`[libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll)`) if it's not yet installed, or upgrade the Plugin Manager if it is out-of-date. 
+The installer will install the Pidgin-Mattermost plugin, add the Mattermost icons to your Pidgin client, and either install the Pidgin Plugin Manager ([`libjson-glib-1.0.dll`](https://eion.robbmob.com/libjson-glib-1.0.dll)) if it's not yet installed, or upgrade the Plugin Manager if it is out-of-date. 
 
 ### 3) Restart Pidgin
 
