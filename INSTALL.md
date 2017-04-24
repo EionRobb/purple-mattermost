@@ -12,17 +12,17 @@ Download and install [Pidgin per instructions.](https://pidgin.im/download/)
  
 ### 2) Install Pidgin-Mattermost 
 
-1. Confirm with your internal IT team that the use of the Pidgin-Mattermost plugin is approved. 
+#### a) Download the plugin installer 
 
-If your IT team is sending you to this documentation, it is most likely approved. Note that the complete source code of this plugin is publicly available for review at https://github.com/EionRobb/purple-mattermost
+Download the latest release of the Pidgin-Mattermost plugin from the [releases page](https://github.com/EionRobb/purple-mattermost/releases), which should be named `Pidgin-Mattermost-v[VERSION_NUMBER].exe`.
 
-2. Download the installer for the latest release of the Pidgin-Mattermost plugin from the [releases page.](https://github.com/EionRobb/purple-mattermost/releases), which should be named `Pidgin-Mattermost-v[VERSION_NUMBER].exe`
+This plugin is "open source" and its [complete source code is publicly available for review and modification.](https://github.com/EionRobb/purple-mattermost) 
 
 If your browser displays a warning for downloading an executable file, select "Keep" from the menu to approve the use of the installer as shown in the image below: 
 
 ![image](https://cloud.githubusercontent.com/assets/177788/25340045/5d239268-28b9-11e7-943b-814fddf27350.png)
 
-3. Run the installer file 
+#### b) Run the installer file 
 
 The installer will install the Pidgin-Mattermost plugin, add the Mattermost icons to your Pidgin client, and either install the Pidgin Plugin Manager (`[libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll)`) if it's not yet installed, or upgrade the Plugin Manager if it is out-of-date. 
 
