@@ -2,25 +2,24 @@
 
 ## Server Install
 
-- Install Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
+- Install Mattermost server version 3.8 or later [per the install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost).
 
 ## Windows Client Install
  
-### 1) Install [Pidgin](https://pidgin.im/download/)
+### 1) Install Pidgin
 
-Download and install Pidgin per instructions. 
-
+Download and install [Pidgin per instructions.](https://pidgin.im/download/)
+ 
 ### 2) Enable plugins
 
 If you don't already have Pidgin plugins (such as Skype, Facebook, Steam, etc.) enabled, enable plug-ins by downloading [libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll) and adding it to your `Program Files (x86)/Pidgin` directory 
 
 ### 3) Install Pidgin-Mattermost plugin 
 
-This plugin is currently in developer preview mode, and nightly builds are available from https://eion.robbmob.com/libmattermost.dll.  
-
-To install the plugin, copy the file to `Program Files (x86)\Pidgin\plugins`
-
-When plugin development is complete a Version 1.0 should be made available from the project releases page at https://github.com/EionRobb/purple-mattermost/releases
+1. Download the latest release of the Pidgin-Mattermost plugin from the [releases page.](https://github.com/EionRobb/purple-mattermost/releases) 
+2. Copy the file to `Program Files (x86)\Pidgin\plugins`.
+ 
+Note: If you'd like to try an unreleased version of the Pidgin-Mattermost plugin, you can download and run the latest nightly build from https://eion.robbmob.com/libmattermost.dll.  
 
 ### 4) Restart Pidgin
 
@@ -41,7 +40,7 @@ You should see a welcome screen from Pidgin with help instructions on how to get
 
 Select Mattermost from the dropdown list under Protocol: 
 
-<img src="https://cloud.githubusercontent.com/assets/177788/25308346/c8836974-2766-11e7-8a50-2cfc837fe0ac.png" width="400">
+<img src="https://cloud.githubusercontent.com/assets/177788/25324543/3f8cc9c4-287b-11e7-885c-3e83f9299eac.jpg" width="400">
 
 Enter: 
 
