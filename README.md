@@ -7,22 +7,22 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 
 **Setup**
 
-- Connects to Mattermost server using email/username & password 
-- Connects to Mattermost server using AD/LDAP credentials 
+- Connect to Mattermost server using email/username & password 
+- Connect to Mattermost server using AD/LDAP credentials 
 - Ability to view public, private and multi-party direct message channels in Buddy List 
 
 **Core Communication**
 
-- Ability to send and receive messages 
-- Ability to send and receive weblinks 
+- Send and receive messages, including weblinks and emoji  
+- Edit messages 
 
 **Group Discussions**
 
-- Ability to join a public and private channels and multi-party direct message channels by right-clicking on channel in Buddy List and selecting **Join** 
+- Join a public and private channels and multi-party direct message channels by right-clicking on channel in Buddy List and selecting **Join** 
 
 **1-1 Discussions**
 
-- Ability to start Direct Message discussions from a Room by right-clicking on the user name and selecting **IM**
+- Open Direct Message discussions from a Room by right-clicking on the user name and selecting **IM**
 
 ## Screenshots
 
