@@ -105,7 +105,7 @@ json_object_to_string(JsonObject *obj)
 
 #define MATTERMOST_PLUGIN_ID "prpl-eionrobb-mattermost"
 #ifndef MATTERMOST_PLUGIN_VERSION
-#define MATTERMOST_PLUGIN_VERSION "0.1"
+#define MATTERMOST_PLUGIN_VERSION "1.0"
 #endif
 #define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/mattermost-libpurple"
 
