@@ -40,7 +40,7 @@ You should see a welcome screen from Pidgin with help instructions on how to get
 
 Select Mattermost from the dropdown list under Protocol: 
 
-<img src="https://cloud.githubusercontent.com/assets/177788/25308346/c8836974-2766-11e7-8a50-2cfc837fe0ac.png" width="400">
+<img src="https://cloud.githubusercontent.com/assets/177788/25324543/3f8cc9c4-287b-11e7-885c-3e83f9299eac.jpg" width="400">
 
 Enter: 
 
