@@ -2,7 +2,7 @@
 
 ## Server Install
 
-- Install Mattermost server version 3.8 or later ([See install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost))
+- Install Mattermost server version 3.8 or later [per the install instructions](https://docs.mattermost.com/guides/administrator.html#installing-mattermost).
 
 ## Windows Client Install
  
