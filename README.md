@@ -1,5 +1,5 @@
 
-# Pidgin-Mattermost plug-in by Eion Robb 
+# Pidgin-Mattermost plugin by Eion Robb 
 
 Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium, bitlbee) with Mattermost server. 
 
@@ -15,7 +15,7 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 - User search via **Accounts > {Mattermost Account} > Search for Users...**
 
 **Core Communication**
-
+ 
 - Send and receive messages, including weblinks and emoji.  
 - Display of online/offline/away status. 
 - Sending of read notifications so the server understands users is still online. 
@@ -48,14 +48,18 @@ Please see install guides for setting up Pidgin-Mattermost
 - [Windows Client Install Guide](INSTALL.md#windows-client-install) 
 - [Linux Client Install Guide](INSTALL.md#linux-client-install-guide)
 
+This plugin includes it own installer for setting up on Windows: 
+
+![s](https://cloud.githubusercontent.com/assets/177788/25341540/fddee14a-28bd-11e7-92d6-85ed2fbb83e7.png) 
+
 ### Developer Install Guide 
  
 For modifying or extending this project please follow the [Linux Client Install Guide](INSTALL.md#linux-client-install-guide) to set up your environment. 
 
 ## Changelog 
 
-- April 18, 2017 - Pidgin 0.0 - Project started 
-- April 23, 2017 - Pidgin 1.0 - Initial Release 
+- April 18, 2017 - Pidgin-Mattermost v0.0 - Project started 
+- April 23, 2017 - Pidgin-Mattermost v1.0 - Initial Release   
 
 ## Verification 
 
