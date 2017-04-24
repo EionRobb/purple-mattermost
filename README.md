@@ -1,5 +1,5 @@
 
-# Pidgin-Mattermost plug-in by Eion Robb (Alpha Release)  
+# Pidgin-Mattermost plug-in by Eion Robb 
 
 Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium, bitlbee) with Mattermost server. 
 
@@ -43,7 +43,7 @@ For modifying or extending this project please follow the [Linux Client Install 
 ## Changelog 
 
 - April 18, 2017 - Pidgin 0.0 - Project started 
-- April 23, 2017 - Pidgin 0.1 - Alpha Release 
+- April 23, 2017 - Pidgin 1.0 - Initial Release 
 
 ## Verification 
 
@@ -51,6 +51,6 @@ The following table outlines the results of verification tests completed on diff
 
 | Version | Verification Plan | Analyst | Verification Date | Bugs Found |  
 | :--- | :--- | :--- | :--- | :--- | 
-| Pidgin 0.0 | [Win10 Tests v1.0](VERIFICATION.md#win10-tests-v10) | Ian Tien | April 23, 2017 | [#4](https://github.com/EionRobb/purple-mattermost/issues/4) | 
+| Pidgin 1.0 | [Win10 Tests v1.0](VERIFICATION.md#win10-tests-v10) | Ian Tien | April 23, 2017 | [#4](https://github.com/EionRobb/purple-mattermost/issues/4) | 
 
 Contributions to testing and verifying this projects are highly welcome, read our [verification contributions documentation to learn how you can help.](VERIFICATION.md#verification-contributions) 
