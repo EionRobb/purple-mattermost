@@ -57,3 +57,5 @@ Using Window 7, complete the [Windows Test Plan for Supported Operating Systems]
 4. From Pidgen, post a message, emoji and a hyperlink to the **Public Test Channel**. 
 5. From Mattermost, verify the contents are received, and post back the same message from Mattermost.
 6. From Pidgin, verify the message has been received. 
+7. Open a GitHub issue for any new bug found ([see example of issue](https://github.com/EionRobb/purple-mattermost/issues/4))
+8. Make a pull request to [add your name to the project README in the verification tests table](https://github.com/EionRobb/purple-mattermost#verification) indicating the test you ran and the version of Pidgin on which you ran the test. 
