@@ -10,18 +10,23 @@
 
 Download and install [Pidgin per instructions.](https://pidgin.im/download/)
  
-### 2) Enable plugins
+### 2) Install Pidgin-Mattermost 
 
-If you don't already have Pidgin plugins (such as Skype, Facebook, Steam, etc.) enabled, enable plug-ins by downloading [libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll) and adding it to your `Program Files (x86)/Pidgin` directory 
+1. Confirm with your internal IT team that the use of the Pidgin-Mattermost plugin is approved. 
 
-### 3) Install Pidgin-Mattermost plugin 
+If your IT team is sending you to this documentation, it is most likely approved. Note that the complete source code of this plugin is publicly available for review at https://github.com/EionRobb/purple-mattermost
 
-1. Download the latest release of the Pidgin-Mattermost plugin from the [releases page.](https://github.com/EionRobb/purple-mattermost/releases) 
-2. Copy the file to `Program Files (x86)\Pidgin\plugins`.
- 
-Note: If you'd like to try an unreleased version of the Pidgin-Mattermost plugin, you can download and run the latest nightly build from https://eion.robbmob.com/libmattermost.dll.  
+2. Download the installer for the latest release of the Pidgin-Mattermost plugin from the [releases page.](https://github.com/EionRobb/purple-mattermost/releases), which should be named `Pidgin-Mattermost-v[VERSION_NUMBER].exe`
 
-### 4) Restart Pidgin
+If your browser displays a warning for downloading an executable file, select "Keep" from the menu to approve the use of the installer as shown in the image below: 
+
+![image](https://cloud.githubusercontent.com/assets/177788/25340045/5d239268-28b9-11e7-943b-814fddf27350.png)
+
+3. Run the installer file 
+
+The installer will install the Pidgin-Mattermost plugin, add the Mattermost icons to your Pidgin client, and either install the Pidgin Plugin Manager (`[libjson-glib-1.0.dll](https://eion.robbmob.com/libjson-glib-1.0.dll)`) if it's not yet installed, or upgrade the Plugin Manager if it is out-of-date. 
+
+### 3) Restart Pidgin
 
 Restart Pidgin to enable the plugin. 
 
@@ -29,7 +34,7 @@ You should see a welcome screen from Pidgin with help instructions on how to get
 
 <img src="https://cloud.githubusercontent.com/assets/177788/25308341/b3c5dd14-2766-11e7-980f-6919f5d61fbb.png" width="600">
 
-### 5) Enter your Mattermost account 
+### 4) Enter your Mattermost account 
 
 #### 1) From the Pidgin Welcome Screen, click "Add..." to add an account
 
