@@ -19,7 +19,7 @@ If you don't already have Pidgin plugins (such as Skype, Facebook, Steam, etc.) 
 1. Download the latest release of the Pidgin-Mattermost plugin from the [releases page.](https://github.com/EionRobb/purple-mattermost/releases) 
 2. Copy the file to `Program Files (x86)\Pidgin\plugins`.
  
-Note: If you'd like to try an unreleased version of the Pidgin-Mattermost plugin, you can download and run a nightly build, available from https://eion.robbmob.com/libmattermost.dll.  
+Note: If you'd like to try an unreleased version of the Pidgin-Mattermost plugin, you can download and run the latest nightly build from https://eion.robbmob.com/libmattermost.dll.  
 
 ### 4) Restart Pidgin
 
