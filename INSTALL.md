@@ -16,21 +16,45 @@ Download and install [Pidgin per instructions.](https://pidgin.im/download/)
 
 Download the latest release of the Pidgin-Mattermost plugin from the [releases page](https://github.com/EionRobb/purple-mattermost/releases), which should be named `Pidgin-Mattermost-v[VERSION_NUMBER].exe`.
 
-This plugin is "open source" and its [complete source code is publicly available for review and modification.](https://github.com/EionRobb/purple-mattermost) 
+Notes: 
 
-If your browser displays a warning for downloading an executable file, select "Keep" from the menu to approve the use of the installer as shown in the image below: 
+- This plugin is "open source" and its [complete source code is publicly available for review and critique.](https://github.com/EionRobb/purple-mattermost). Because it is a program that runs on your computer, and because it does not bear the digital signature of a corporation, you may encounter warnings while installing to confirm you are intentionally installing the software and are aware of its origins.
 
-![image](https://cloud.githubusercontent.com/assets/177788/25340045/5d239268-28b9-11e7-943b-814fddf27350.png)
+- Your browser may display a warning on download to the effect of: "Pidgin-Mattermost-v[VERSION_NUMBER].exe is not commonly downloaded and may be dangerous", you can confirm you understand the warning and select **Keep** from the menu button to continue. 
 
 #### b) Run the installer file 
 
+Double click on the .exe file you downloaded to start the installation. 
+
+- You may see an "unrecognized app" warning. Click "More info" and "Run anyway" to continue and enter "Yes" to confirm when asked again.
+
+#### c) On welcome screen click "Next" to continue
+
+![image](https://cloud.githubusercontent.com/assets/177788/25341540/fddee14a-28bd-11e7-92d6-85ed2fbb83e7.png)
+
+On the next screen, review and accept the standard open source license agreement, "GPLv3" if you wish to proceed. [The full license file along with summary explaination is available online.](https://github.com/EionRobb/purple-mattermost/blob/master/LICENSE) 
+
+The following screen will show progress on the installation procedure: 
+
+![image](https://cloud.githubusercontent.com/assets/177788/25341675/709d9f64-28be-11e7-8f99-bf7a7e4f9e9f.png)
+
 The installer will install the Pidgin-Mattermost plugin, add the Mattermost icons to your Pidgin client, and either install the Pidgin Plugin Manager ([`libjson-glib-1.0.dll`](https://eion.robbmob.com/libjson-glib-1.0.dll)) if it's not yet installed, or upgrade the Plugin Manager if it is out-of-date. 
+
+#### d) If your plugin manager is out-dated, you may be asked to confirm you want to upgrade
+
+Click **OK** to continue. 
+
+![image](https://cloud.githubusercontent.com/assets/177788/25341680/77475184-28be-11e7-98ed-d4f8fd7217d2.png)
+
+#### e) Click "Finish" after the installer is complete 
+
+You may optionally check "Run Pidgin" to start the application after completing the plugin installation.
+
+![image](https://cloud.githubusercontent.com/assets/177788/25341715/9d85fe54-28be-11e7-8c9c-0efb2cb8add5.png)
 
 ### 3) Restart Pidgin
 
-Restart Pidgin to enable the plugin. 
-
-You should see a welcome screen from Pidgin with help instructions on how to get started: 
+When the app is restarted, you should see a welcome screen from Pidgin with help instructions on how to get started: 
 
 <img src="https://cloud.githubusercontent.com/assets/177788/25308341/b3c5dd14-2766-11e7-980f-6919f5d61fbb.png" width="600">
 
