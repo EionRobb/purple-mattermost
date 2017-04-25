@@ -777,6 +777,47 @@ gpointer user_data, const gchar *url_text, gsize len, const gchar *error_message
 	g_free(conn);
 }
 
+gchar *
+mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
+	__attribute__ ((format (printf, 2, 3)));
+
+gchar *
+mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
+{
+	GString *url = g_string_new(NULL);
+	const gchar *last_cur, *cur, *tok;
+	va_list args;
+	
+	g_string_append(url, "https://"); //TODO http:// if ssl disabled
+	g_string_append(url, ma->server);
+	
+	va_start(args, url_format);
+	for(last_cur = cur = url_format; cur; last_cur = cur, cur = strchr(cur, '%')) {
+		g_string_append_len(url, last_cur, cur - last_cur);
+		
+		if (*cur == '%') {
+			if (*(cur + 1) == 's') {
+				tok = va_arg(args, char *);
+				g_string_append_uri_escaped(url, tok, NULL, TRUE);
+			} else if (*(cur + 1) == '%') {
+				g_string_append_c(url, '%');
+			} else if (*(cur + 1) == 'd') {
+				int d = va_arg(args, int);
+				g_string_append_printf(url, "%d", d);
+			} else if (*(cur + 1) == 'c') {
+				char c = va_arg(args, int);
+				g_string_append_c(url, c);
+			}
+			cur += 2;
+		}
+	}
+	va_end(args);
+	
+	g_string_append(url, last_cur);
+	
+	return g_string_free(url, FALSE);
+}
+
 static void
 mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, MattermostProxyCallbackFunc callback, gpointer user_data)
 {
