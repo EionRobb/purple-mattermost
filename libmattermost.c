@@ -2743,7 +2743,11 @@ mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 	JsonObject *obj;
 	gchar *url;
 	gchar *postdata;
-	const gchar *team_id = g_hash_table_lookup(ma->channel_teams, room_id);
+	const gchar *team_id = NULL;
+
+	if (room_id != NULL) {
+		team_id = g_hash_table_lookup(ma->channel_teams, room_id);
+	}
 	
 	if (team_id == NULL) {
 		team_id = mm_get_first_team_id(ma);
