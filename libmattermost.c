@@ -308,7 +308,9 @@ typedef struct {
 	gchar *self_user_id;
 	gchar *self_username;
 	
+	gchar *current_channel_id;
 	gchar *last_channel_id;
+	guint read_messages_timeout;
 	gint64 last_message_timestamp;
 	gint64 last_load_last_message_timestamp;
 	guint idle_timeout;
@@ -1917,6 +1919,7 @@ mm_close(PurpleConnection *pc)
 	g_return_if_fail(ma != NULL);
 	
 	purple_timeout_remove(ma->idle_timeout);
+	purple_timeout_remove(ma->read_messages_timeout);
 	
 	purple_proxy_connect_cancel_with_handle(pc);
 	if (ma->websocket != NULL) purple_ssl_close(ma->websocket);
@@ -1959,6 +1962,7 @@ mm_close(PurpleConnection *pc)
 	
 	g_hash_table_destroy(ma->cookie_table); ma->cookie_table = NULL;
 	g_free(ma->last_channel_id); ma->last_channel_id = NULL;
+	g_free(ma->current_channel_id); ma->current_channel_id = NULL;
 	g_free(ma->username); ma->username = NULL;
 	g_free(ma->server); ma->server = NULL;
 	g_free(ma->frame); ma->frame = NULL;
@@ -2808,13 +2812,15 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	mm_join_room(ma, team_id, id);
 }
 
-static void
-mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
+static gboolean
+mm_mark_room_messages_read_timeout(gpointer userdata)
 {
+	MattermostAccount *ma = userdata;
 	JsonObject *obj;
 	gchar *url;
 	gchar *postdata;
 	const gchar *team_id = NULL;
+	const gchar *room_id = ma->current_channel_id;
 
 	if (room_id != NULL) {
 		team_id = g_hash_table_lookup(ma->channel_teams, room_id);
@@ -2825,7 +2831,7 @@ mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 	}
 	
 	if (team_id == NULL) {
-		return;
+		return FALSE;
 	}
 	
 	obj = json_object_new();
@@ -2842,6 +2848,18 @@ mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 	
 	g_free(ma->last_channel_id);
 	ma->last_channel_id = g_strdup(room_id);
+	
+	return FALSE;
+}
+
+static void
+mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
+{
+	g_free(ma->current_channel_id);
+	ma->current_channel_id = g_strdup(room_id);
+	
+	purple_timeout_remove(ma->read_messages_timeout);
+	ma->read_messages_timeout = purple_timeout_add_seconds(1, mm_mark_room_messages_read_timeout, ma);
 }
 
 static void
