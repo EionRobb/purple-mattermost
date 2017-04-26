@@ -317,6 +317,9 @@ typedef struct {
 	gchar *server;
 	
 	PurpleSslConnection *websocket;
+	guint websocket_inpa;
+	gint websocket_fd;
+	
 	gboolean websocket_header_received;
 	gboolean sync_complete;
 	guchar packet_code;
@@ -788,7 +791,11 @@ mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
 	const gchar *last_cur, *cur, *tok;
 	va_list args;
 	
-	g_string_append(url, "https://"); //TODO http:// if ssl disabled
+	if (purple_account_get_bool(ma->account, "use-ssl", TRUE)) {
+		g_string_append(url, "https://");
+	} else {
+		g_string_append(url, "http://");
+	}
 	g_string_append(url, ma->server);
 	
 	va_start(args, url_format);
@@ -1906,14 +1913,15 @@ static void
 mm_close(PurpleConnection *pc)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-	// PurpleAccount *account;
 	
 	g_return_if_fail(ma != NULL);
 	
 	purple_timeout_remove(ma->idle_timeout);
 	
-	// account = purple_connection_get_account(pc);
+	purple_proxy_connect_cancel_with_handle(pc);
 	if (ma->websocket != NULL) purple_ssl_close(ma->websocket);
+	if (ma->websocket_inpa) purple_input_remove(ma->websocket_inpa);
+	if (ma->websocket_fd >= 0) close(ma->websocket_fd);
 	
 	g_hash_table_remove_all(ma->one_to_ones);
 	g_hash_table_unref(ma->one_to_ones);
@@ -2001,6 +2009,26 @@ mm_process_frame(MattermostAccount *ma, const gchar *frame)
 	return TRUE;
 }
 
+static size_t
+mm_socket_read(MattermostAccount *ma, gpointer buffer, size_t len)
+{
+	if (ma->websocket) {
+		return purple_ssl_read(ma->websocket, buffer, len);
+	}
+	
+	return read(ma->websocket_fd, buffer, len);
+}
+
+static size_t
+mm_socket_write(MattermostAccount *ma, gconstpointer buffer, size_t len)
+{
+	if (ma->websocket) {
+		return purple_ssl_write(ma->websocket, buffer, len);
+	}
+	
+	return write(ma->websocket_fd, buffer, len);
+}
+
 static guchar *
 mm_websocket_mask(guchar key[4], const guchar *pload, guint64 psize)
 {
@@ -2060,7 +2088,7 @@ mm_socket_write_data(MattermostAccount *ma, guchar *data, gssize data_len, gucha
 	memmove(full_data + (1 + len_size), &mkey, 4);
 	memmove(full_data + (1 + len_size + 4), data, data_len);
 	
-	purple_ssl_write(ma->websocket, full_data, 1 + data_len + len_size + 4);
+	mm_socket_write(ma, full_data, 1 + data_len + len_size + 4);
 	
 	g_free(full_data);
 	g_free(data);
@@ -2099,7 +2127,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 		gint nlbr_count = 0;
 		gchar nextchar;
 		
-		while(nlbr_count < 4 && purple_ssl_read(conn, &nextchar, 1)) {
+		while(nlbr_count < 4 && mm_socket_read(ma, &nextchar, 1)) {
 			if (nextchar == '\r' || nextchar == '\n') {
 				nlbr_count++;
 			} else {
@@ -2117,7 +2145,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 		}
 	}
 	
-	while(ma->frame || (read_len = purple_ssl_read(conn, &ma->packet_code, 1)) == 1) {
+	while(ma->frame || (read_len = mm_socket_read(ma, &ma->packet_code, 1)) == 1) {
 		if (!ma->frame) {
 			if (ma->packet_code != 129) {
 				if (ma->packet_code == 136) {
@@ -2131,20 +2159,20 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 					// Ping
 					gint ping_frame_len = 0;
 					length_code = 0;
-					purple_ssl_read(conn, &length_code, 1);
+					mm_socket_read(ma, &length_code, 1);
 					if (length_code <= 125) {
 						ping_frame_len = length_code;
 					} else if (length_code == 126) {
 						guchar len_buf[2];
-						purple_ssl_read(conn, len_buf, 2);
+						mm_socket_read(ma, len_buf, 2);
 						ping_frame_len = (len_buf[0] << 8) + len_buf[1];
 					} else if (length_code == 127) {
-						purple_ssl_read(conn, &ping_frame_len, 8);
+						mm_socket_read(ma, &ping_frame_len, 8);
 						ping_frame_len = GUINT64_FROM_BE(ping_frame_len);
 					}
 					if (ping_frame_len) {
 						guchar *pong_data = g_new0(guchar, ping_frame_len);
-						purple_ssl_read(conn, pong_data, ping_frame_len);
+						mm_socket_read(ma, pong_data, ping_frame_len);
 
 						mm_socket_write_data(ma, pong_data, ping_frame_len, 138);
 						g_free(pong_data);
@@ -2162,15 +2190,15 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 			}
 			
 			length_code = 0;
-			purple_ssl_read(conn, &length_code, 1);
+			mm_socket_read(ma, &length_code, 1);
 			if (length_code <= 125) {
 				ma->frame_len = length_code;
 			} else if (length_code == 126) {
 				guchar len_buf[2];
-				purple_ssl_read(conn, len_buf, 2);
+				mm_socket_read(ma, len_buf, 2);
 				ma->frame_len = (len_buf[0] << 8) + len_buf[1];
 			} else if (length_code == 127) {
-				purple_ssl_read(conn, &ma->frame_len, 8);
+				mm_socket_read(ma, &ma->frame_len, 8);
 				ma->frame_len = GUINT64_FROM_BE(ma->frame_len);
 			}
 			//purple_debug_info("mattermost", "frame_len: %" G_GUINT64_FORMAT "\n", ma->frame_len);
@@ -2180,7 +2208,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 		}
 		
 		do {
-			read_len = purple_ssl_read(conn, ma->frame + ma->frame_len_progress, ma->frame_len - ma->frame_len_progress);
+			read_len = mm_socket_read(ma, ma->frame + ma->frame_len_progress, ma->frame_len - ma->frame_len_progress);
 			if (read_len > 0) {
 				ma->frame_len_progress += read_len;
 			}
@@ -2218,14 +2246,17 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 }
 
 static void
-mm_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInputCondition cond)
+mm_socket_got_data_nonssl(gpointer userdata, gint fd, PurpleInputCondition cond)
 {
-	MattermostAccount *ma = userdata;
+	mm_socket_got_data(userdata, NULL, cond);
+}
+
+static void
+mm_socket_send_headers(MattermostAccount *ma)
+{
 	gchar *websocket_header;
 	gchar *cookies;
 	const gchar *websocket_key = "15XF+ptKDhYVERXoGcdHTA=="; //TODO don't be lazy
-	
-	purple_ssl_input_add(ma->websocket, mm_socket_got_data, ma);
 	
 	cookies = mm_cookies_to_string(ma);
 	
@@ -2244,10 +2275,20 @@ mm_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInputCon
 							"\r\n", ma->server,
 							websocket_key, cookies, ma->session_token);
 	
-	purple_ssl_write(ma->websocket, websocket_header, strlen(websocket_header));
+	mm_socket_write(ma, websocket_header, strlen(websocket_header));
 	
 	g_free(websocket_header);
 	g_free(cookies);
+}
+
+static void
+mm_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInputCondition cond)
+{
+	MattermostAccount *ma = userdata;
+	
+	purple_ssl_input_add(ma->websocket, mm_socket_got_data, ma);
+	
+	mm_socket_send_headers(ma);
 }
 
 static void
@@ -2266,6 +2307,23 @@ mm_socket_failed(PurpleSslConnection *conn, PurpleSslErrorType errortype, gpoint
 }
 
 static void
+mm_socket_connected_nonssl(gpointer userdata, gint source, const gchar *error_message)
+{
+	MattermostAccount *ma = userdata;
+
+	if (source < 0) {
+		// Error when connecting
+		mm_socket_failed(NULL, 0, ma);
+		return;
+	}
+
+	ma->websocket_fd = source;
+	ma->websocket_inpa = purple_input_add(source, PURPLE_INPUT_READ, mm_socket_got_data_nonssl, ma);
+	
+	mm_socket_send_headers(ma);
+}
+
+static void
 mm_start_socket(MattermostAccount *ma)
 {
 	gchar **server_split;
@@ -2274,6 +2332,10 @@ mm_start_socket(MattermostAccount *ma)
 	//Reset all the old stuff
 	if (ma->websocket != NULL) {
 		purple_ssl_close(ma->websocket);
+	}
+	
+	if (!purple_account_get_bool(ma->account, "use-ssl", TRUE)) {
+		port = 80;
 	}
 	
 	ma->websocket = NULL;
@@ -2287,7 +2349,12 @@ mm_start_socket(MattermostAccount *ma)
 	if (server_split[1] != NULL) {
 		port = atoi(server_split[1]);
 	}
-	ma->websocket = purple_ssl_connect(ma->account, server_split[0], port, mm_socket_connected, mm_socket_failed, ma);
+	
+	if (purple_account_get_bool(ma->account, "use-ssl", TRUE)) {
+		ma->websocket = purple_ssl_connect(ma->account, server_split[0], port, mm_socket_connected, mm_socket_failed, ma);
+	} else {
+		purple_proxy_connect(ma->pc, ma->account, server_split[0], port, mm_socket_connected_nonssl, ma);
+	}
 	
 	g_strfreev(server_split);
 }
@@ -3406,10 +3473,13 @@ mm_get_account_text_table(PurpleAccount *unused)
 static GList *
 mm_add_account_options(GList *account_options)
 {
-	// PurpleAccountOption *option;
+	PurpleAccountOption *option;
 	
 	// option = purple_account_option_bool_new(N_("Auto-add buddies to the buddy list"), "auto-add-buddy", FALSE);
 	// account_options = g_list_append(account_options, option);
+	
+	option = purple_account_option_bool_new(N_("Use SSL/HTTPS"), "use-ssl", TRUE);
+	account_options = g_list_append(account_options, option);
 	
 	return account_options;
 }
