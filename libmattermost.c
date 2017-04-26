@@ -761,6 +761,11 @@ gpointer user_data, const gchar *url_text, gsize len, const gchar *error_message
 			json_node_set_object(dummy_node, dummy_object);
 			json_object_set_string_member(dummy_object, "body", body);
 			json_object_set_int_member(dummy_object, "len", body_len);
+			if (body_len >= 12 && g_str_has_prefix(body, "HTTP/1.")) {
+				json_object_set_int_member(dummy_object, "status_code", g_ascii_strtoll(body + 9, NULL, 10));
+			} else {
+				json_object_set_int_member(dummy_object, "status_code", 500);
+			}
 			g_dataset_set_data(dummy_node, "raw_body", (gpointer) body);
 			
 			conn->callback(conn->ma, dummy_node, conn->user_data);
