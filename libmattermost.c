@@ -2147,7 +2147,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 		gint nlbr_count = 0;
 		gchar nextchar;
 		
-		while(nlbr_count < 4 && mm_socket_read(ma, &nextchar, 1)) {
+		while(nlbr_count < 4 && (read_len = mm_socket_read(ma, &nextchar, 1)) == 1) {
 			if (nextchar == '\r' || nextchar == '\n') {
 				nlbr_count++;
 			} else {
@@ -2155,13 +2155,15 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 			}
 		}
 		
-		ma->websocket_header_received = TRUE;
-		done_some_reads = TRUE;
+		if (nlbr_count == 4) {
+			ma->websocket_header_received = TRUE;
+			done_some_reads = TRUE;
 
-		/* flush stuff that we attempted to send before the websocket was ready */
-		while (ma->pending_writes) {
-			mm_socket_write_json(ma, ma->pending_writes->data);
-			ma->pending_writes = g_slist_delete_link(ma->pending_writes, ma->pending_writes);
+			/* flush stuff that we attempted to send before the websocket was ready */
+			while (ma->pending_writes) {
+				mm_socket_write_json(ma, ma->pending_writes->data);
+				ma->pending_writes = g_slist_delete_link(ma->pending_writes, ma->pending_writes);
+			}
 		}
 	}
 	
