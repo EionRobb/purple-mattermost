@@ -1076,6 +1076,12 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	if (g_hash_table_contains(ma->cookie_table, "MMAUTHTOKEN")) {
 		g_free(ma->session_token);
 		ma->session_token = g_strdup(g_hash_table_lookup(ma->cookie_table, "MMAUTHTOKEN"));
+	} else if (json_object_has_member(response, "body")) {
+		// Uh oh, error
+		gchar *stripped = purple_markup_strip_html(json_object_get_string_member(response, "body"));
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, stripped);
+		g_free(stripped);
+		return;
 	}
 	
 	if (json_object_get_int_member(response, "status_code") >= 400) {
@@ -1087,6 +1093,11 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	ma->self_user_id = g_strdup(json_object_get_string_member(response, "id"));
 	g_free(ma->self_username);
 	ma->self_username = g_strdup(json_object_get_string_member(response, "username"));
+	
+	if (!ma->self_user_id || !ma->self_username) {
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
+		return;
+	}
 	
 	if (!purple_account_get_private_alias(ma->account)) {
 		purple_account_set_private_alias(ma->account, ma->self_username);
@@ -2225,7 +2236,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 			ma->packet_code = 0;
 			ma->frame_len = 0;
 			
-			if (G_UNLIKELY(ma->websocket == NULL || success == FALSE)) {
+			if (G_UNLIKELY((ma->websocket == NULL && ma->websocket_fd <= 0) || success == FALSE)) {
 				return;
 			}
 		} else {
@@ -2290,6 +2301,8 @@ mm_socket_connected(gpointer userdata, PurpleSslConnection *conn, PurpleInputCon
 {
 	MattermostAccount *ma = userdata;
 	
+	ma->websocket = conn;
+	
 	purple_ssl_input_add(ma->websocket, mm_socket_got_data, ma);
 	
 	mm_socket_send_headers(ma);
@@ -2337,11 +2350,19 @@ mm_start_socket(MattermostAccount *ma)
 	if (ma->websocket != NULL) {
 		purple_ssl_close(ma->websocket);
 	}
+	if (ma->websocket_inpa) {
+		purple_input_remove(ma->websocket_inpa);
+	}
+	if (ma->websocket_fd > 0) {
+		close(ma->websocket_fd);
+	}
 	
 	if (!purple_account_get_bool(ma->account, "use-ssl", TRUE)) {
 		port = 80;
 	}
 	
+	ma->websocket_fd = 0;
+	ma->websocket_inpa = 0;
 	ma->websocket = NULL;
 	ma->websocket_header_received = FALSE;
 	g_free(ma->frame); ma->frame = NULL;
