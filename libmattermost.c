@@ -2854,11 +2854,11 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 		team_id = g_hash_table_lookup(ma->channel_teams, room_id);
 	}
 	
-	if (team_id == NULL) {
+	if (!team_id || !*team_id) {
 		team_id = mm_get_first_team_id(ma);
 	}
 	
-	if (team_id == NULL) {
+	if (!team_id || !*team_id) {
 		return FALSE;
 	}
 	
