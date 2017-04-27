@@ -821,10 +821,10 @@ mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
 			} else if (*(cur + 1) == 'c') {
 				char c = va_arg(args, int);
 				g_string_append_c(url, c);
-			} else if (strncmp((cur + 1), G_GINT64_FORMAT, strlen(G_GINT64_FORMAT)) == 0) {
+			} else if (strncmp((cur + 1), G_GINT64_FORMAT, sizeof(G_GINT64_FORMAT) - 1) == 0) {
 				gint64 i = va_arg(args, gint64);
 				g_string_append_printf(url, "%" G_GINT64_FORMAT, i);
-				cur += strlen(G_GINT64_FORMAT) - 1;
+				cur += sizeof(G_GINT64_FORMAT) - 2;
 			}
 			cur += 2;
 		}
