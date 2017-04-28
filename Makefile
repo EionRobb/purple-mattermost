@@ -13,9 +13,9 @@ MAKENSIS ?= makensis
 REVISION_ID = $(shell hg id -i)
 REVISION_NUMBER = $(shell hg id -n)
 ifneq ($(REVISION_ID),)
-PLUGIN_VERSION ?= 0.9.$(shell date +%Y.%m.%d).git.r$(REVISION_NUMBER).$(REVISION_ID)
+PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d).git.r$(REVISION_NUMBER).$(REVISION_ID)
 else
-PLUGIN_VERSION ?= 0.9.$(shell date +%Y.%m.%d)
+PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d)
 endif
 
 CFLAGS	?= -O2 -g -pipe -Wall -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
