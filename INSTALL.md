@@ -106,7 +106,7 @@ The members of the channel appear to the right of the conversation. Right-click 
 For people using Debian-based distributions of Linux operating systems, you can install the Pidgin-Mattermost plug using the following commands from a terminal: 
 
 ```
-sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essentials;
+sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essential;
 git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
 make && sudo make install
 ```
