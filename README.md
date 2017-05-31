@@ -10,6 +10,7 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 - Installer for setting up Pidgin-Mattermost with Pidgin.
 - Connect to Mattermost server using email/username & password. 
 - Connect to Mattermost server using AD/LDAP credentials. 
+- Connect to Mattermost server using GitLab authentication (MMAUTHTOKEN workaround).
 - Automatically add buddies and joined channels to buddylist.
 - Unjoined channels displayed in Room List picker to be joined.
 - User search via **Accounts > {Mattermost Account} > Search for Users...**
