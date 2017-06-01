@@ -81,6 +81,17 @@ Optional: Depending on your internal IT policy, optionally check "Remember passw
 
 When complete, click **Add** to complete the creation of your new Mattermost account. This should bring you back to the **Accounts** screen. 
 
+GitLab cookie (MMAUTHTOKEN) authentication workaround:
+
+- Login to your mattermost server with your browser.
+- Obtain the value of MMAUTHTOKEN cookie for your mattermost server. 
+  (in Firefox: Preferences -> Privacy -> Remove individual cookies -> your mattermost server -> MMAUTHTOKEN -> Content)
+- Copy it to **Password:** field.
+- In **Advanced** account setup tab check **Password is Gitlab cookie**.
+
+Note: MMAUTHTOKEN cookie expires after a server defined time: above procedure needs
+      to be repeated each time it happens.
+
 #### 3) Sign-on to Mattermost 
 
 On the **Accounts** screen double-click on your Mattermost server to join. 
@@ -109,4 +120,12 @@ For people using Debian-based distributions of Linux operating systems, you can 
 sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essential;
 git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
 make && sudo make install
+```
+
+For people using Red Hat/Fedora/CentOS distributions of Linux operating systems, you can build and install packaged version of the plugin using the following commands from a terminal: 
+```
+sudo yum install rpm-build json-glib-devel libmarkdown-devel libpurple-devel mercurial
+git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
+make && make rpm
+sudo yum localinstall ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm
 ```

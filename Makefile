@@ -9,6 +9,8 @@ WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
 MAKENSIS ?= makensis
+MAKERPM ?= rpmbuild
+RPMDIR ?= $(shell pwd)/rpmdir
 
 REVISION_ID = $(shell hg id -i)
 REVISION_NUMBER = $(shell hg id -n)
@@ -107,9 +109,17 @@ install-icons: mattermost16.png mattermost22.png mattermost48.png
 installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22.png mattermost48.png
 	$(MAKENSIS) purple-mattermost.nsi
 
+	
+rpm:    
+	mkdir -p $(RPMDIR)/{BUILD,RPMS,SRPMS,SOURCES,SPECS}
+	tar -czf $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude-vcs --transform 's|^\.|purple-mattermost-$(PLUGIN_VERSION)|' .	
+	$(MAKERPM) -ta $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --define 'plugin_version $(PLUGIN_VERSION)' --define '_topdir $(RPMDIR)'
+
 FAILNOPURPLE:
 	echo "You need libpurple development headers installed to be able to compile this plugin"
 
 clean:
 	rm -f $(MATTERMOST_TARGET) 
+	rm -rf $(RPMDIR)
+
 
