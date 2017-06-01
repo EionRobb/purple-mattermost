@@ -1955,7 +1955,7 @@ mm_login(PurpleAccount *account)
 		JsonObject *data = json_object_new();
 		gchar *postdata;
 		
-		if (purple_account_get_bool(ma->account, "use-mmauthtoken", TRUE)) {
+		if (purple_account_get_bool(ma->account, "use-mmauthtoken", FALSE)) {
 			ma->session_token = g_strdup(purple_connection_get_password(pc));
 
 			url = mm_build_url(ma, "/api/v3/users/me");
