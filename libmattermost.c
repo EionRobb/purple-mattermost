@@ -415,7 +415,7 @@ mm_markdown_to_html(const gchar *markdown)
 		gchar **markdown_version_split = g_strsplit_set(	markdown_version, ". ", -1);
 		gchar *last_part;
 		guint i = 0;
-		
+
 		do {
 			last_part = markdown_version_split[i++];
 		} while (markdown_version_split[i] != NULL);
@@ -1065,11 +1065,70 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	ma->idle_timeout = purple_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
 
+
+static void 
+mm_set_me(MattermostAccount *ma)
+{
+
+	if (!purple_account_get_private_alias(ma->account)) {
+		purple_account_set_private_alias(ma->account, ma->self_username); 
+	}
+
+	purple_connection_set_display_name(ma->pc, ma->self_username);
+	
+	g_hash_table_replace(ma->ids_to_usernames, g_strdup(ma->self_user_id), g_strdup(ma->self_username));
+	g_hash_table_replace(ma->usernames_to_ids, g_strdup(ma->self_username), g_strdup(ma->self_user_id));
+ 
+}
+
+static void
+mm_get_teams(MattermostAccount *ma)
+{
+	gchar *url;
+
+	mm_start_socket(ma);
+
+	url = mm_build_url(ma, "/api/v3/teams/all");
+	mm_fetch_url(ma, url, NULL, mm_got_teams, NULL);
+	g_free(url);
+	
+}
+static void
+mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *response;
+
+        if (node == NULL) {
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
+		return;
+	}
+
+        response = json_node_get_object(node);
+
+        if (json_object_get_int_member(response, "status_code") >= 400) {
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, g_strconcat(json_object_get_string_member(response, "message"),"(Invalid or expired Gitlab cookie)",NULL));
+	        return;
+        }
+
+        g_free(ma->self_user_id);
+	ma->self_user_id = g_strdup(json_object_get_string_member(response, "id"));
+	g_free(ma->self_username);
+	ma->self_username = g_strdup(json_object_get_string_member(response, "username"));
+        
+	if (!ma->self_user_id || !ma->self_username) {
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
+		return;
+	}
+	
+        mm_set_me(ma);
+	mm_get_teams(ma);
+
+}
+
 static void
 mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
-	gchar *url;
 
 	if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Bad username/password");
@@ -1103,20 +1162,10 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
 		return;
 	}
+
+	mm_set_me(ma);
+	mm_get_teams(ma);
 	
-	if (!purple_account_get_private_alias(ma->account)) {
-		purple_account_set_private_alias(ma->account, ma->self_username);
-	}
-	purple_connection_set_display_name(ma->pc, ma->self_username);
-	
-	g_hash_table_replace(ma->ids_to_usernames, g_strdup(ma->self_user_id), g_strdup(ma->self_username));
-	g_hash_table_replace(ma->usernames_to_ids, g_strdup(ma->self_username), g_strdup(ma->self_user_id));
-	
-	mm_start_socket(ma);
-	
-	url = mm_build_url(ma, "/api/v3/teams/all");
-	mm_fetch_url(ma, url, NULL, mm_got_teams, NULL);
-	g_free(url);
 }
 
 static PurpleChatUserFlags
@@ -1904,18 +1953,27 @@ mm_login(PurpleAccount *account)
 		JsonObject *data = json_object_new();
 		gchar *postdata;
 		
-		json_object_set_string_member(data, "login_id", ma->username);
-		json_object_set_string_member(data, "password", purple_connection_get_password(pc));
-		json_object_set_string_member(data, "token", ""); //TODO 2FA
+		if (purple_account_get_bool(ma->account, "use-mmauthtoken", FALSE)) {
+			ma->session_token = g_strdup(purple_connection_get_password(pc));
+
+			url = mm_build_url(ma, "/api/v3/users/me");
+			mm_fetch_url(ma, url, NULL, mm_me_response, NULL);
+
+		} else {
+			json_object_set_string_member(data, "login_id", ma->username);
+			json_object_set_string_member(data, "password", purple_connection_get_password(pc));
+			json_object_set_string_member(data, "token", ""); //TODO 2FA
 		
-		postdata = json_object_to_string(data);
+			postdata = json_object_to_string(data);
 		
-		url = mm_build_url(ma, "/api/v3/users/login");
-		mm_fetch_url(ma, url, postdata, mm_login_response, NULL);
-		g_free(url);
+			url = mm_build_url(ma, "/api/v3/users/login");
+			mm_fetch_url(ma, url, postdata, mm_login_response, NULL);
 		
-		g_free(postdata);
+			g_free(postdata);
+		}
 		json_object_unref(data);
+		g_free(url);	
+
 	}
 	
 	if (!chat_conversation_typing_signal) {
@@ -3525,6 +3583,9 @@ mm_add_account_options(GList *account_options)
 	// account_options = g_list_append(account_options, option);
 	
 	option = purple_account_option_bool_new(N_("Use SSL/HTTPS"), "use-ssl", TRUE);
+	account_options = g_list_append(account_options, option);
+
+	option = purple_account_option_bool_new(N_("Password is Gitlab cookie"), "use-mmauthtoken", FALSE);
 	account_options = g_list_append(account_options, option);
 	
 	return account_options;
