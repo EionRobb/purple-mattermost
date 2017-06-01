@@ -121,3 +121,11 @@ sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libm
 git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
 make && sudo make install
 ```
+
+For people using Red Hat/Fedora/CentOS distributions of Linux operating systems, you can build and install packaged version of the plugin using the following commands from a terminal: 
+```
+sudo yum install rpm-build json-glib-devel libmarkdown-devel libpurple-devel mercurial
+git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
+make && make rpm
+sudo yum localinstall ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm
+```

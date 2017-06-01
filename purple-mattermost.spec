@@ -1,5 +1,7 @@
+%{!?plugin_version: %define plugin_version 1.1}
+
 Name:           purple-mattermost
-Version:        1.1
+Version:        %{plugin_version}
 Release:        1%{?dist}
 Summary:        Pidgin protocol plugin to connect to Mattermost
 Vendor:         Eion Robb
@@ -59,6 +61,9 @@ rm -rf %{buildroot}
 %{_datadir}/pixmaps/pidgin/protocols/*/mattermost.png
 
 %changelog
+* %(date "+%a %b %d %Y") (Automated build) - %{version}-%{release}
+- Updated package.
+
 * Wed May 31 2017 Jaroslaw Polok <jaroslaw.polok@gmail.com> - 1.1
 - Initial packaging.
 
