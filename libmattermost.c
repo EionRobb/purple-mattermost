@@ -416,8 +416,6 @@ mm_markdown_to_html(const gchar *markdown)
 		gchar *last_part;
 		guint i = 0;
 
-		printf("AA:%s:AA\n",markdown_version);
-		
 		do {
 			last_part = markdown_version_split[i++];
 		} while (markdown_version_split[i] != NULL);
