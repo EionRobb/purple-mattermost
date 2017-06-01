@@ -415,6 +415,8 @@ mm_markdown_to_html(const gchar *markdown)
 		gchar **markdown_version_split = g_strsplit_set(	markdown_version, ". ", -1);
 		gchar *last_part;
 		guint i = 0;
+
+		printf("AA:%s:AA\n",markdown_version);
 		
 		do {
 			last_part = markdown_version_split[i++];
@@ -1099,14 +1101,14 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonObject *response;
 
         if (node == NULL) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid/Expired MMAUTHTOKEN");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
 		return;
 	}
 
         response = json_node_get_object(node);
 
         if (json_object_get_int_member(response, "status_code") >= 400) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, g_strconcat(json_object_get_string_member(response, "message"),"(expired or invalid MMAUTHTOKEN)",NULL));
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, g_strconcat(json_object_get_string_member(response, "message"),"(Invalid or expired Gitlab cookie)",NULL));
 	        return;
         }
 
@@ -3585,7 +3587,7 @@ mm_add_account_options(GList *account_options)
 	option = purple_account_option_bool_new(N_("Use SSL/HTTPS"), "use-ssl", TRUE);
 	account_options = g_list_append(account_options, option);
 
-	option = purple_account_option_bool_new(N_("Use password as MMAUTHTOKEN"), "use-mmauthtoken", FALSE);
+	option = purple_account_option_bool_new(N_("Password is Gitlab cookie"), "use-mmauthtoken", FALSE);
 	account_options = g_list_append(account_options, option);
 	
 	return account_options;

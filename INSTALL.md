@@ -81,15 +81,15 @@ Optional: Depending on your internal IT policy, optionally check "Remember passw
 
 When complete, click **Add** to complete the creation of your new Mattermost account. This should bring you back to the **Accounts** screen. 
 
-GitLab (MMAUTHTOKEN) authentication workaround:
+GitLab cookie (MMAUTHTOKEN) authentication workaround:
 
 - Login to your mattermost server with your browser.
 - Obtain the value of MMAUTHTOKEN cookie for your mattermost server. 
   (in Firefox: Preferences -> Privacy -> Remove individual cookies -> your mattermost server -> MMAUTHTOKEN -> Content)
 - Copy it to **Password:** field.
-- In **Advanced** account setup tab check **Use password as MMAUTHTOKEN**.
+- In **Advanced** account setup tab check **Password is Gitlab cookie**.
 
-Note: MMAUTHTOKEN expires after a server defined time: above procedure needs
+Note: MMAUTHTOKEN cookie expires after a server defined time: above procedure needs
       to be repeated each time it happens.
 
 #### 3) Sign-on to Mattermost 
