@@ -1066,6 +1066,60 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 }
 
 
+static void
+mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+        JsonObject *user = json_node_get_object(node);
+        PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
+
+        PurpleBuddy *buddy = user_data;
+        const gchar *nickname;
+        const gchar *first_name;
+        const gchar *last_name;
+        const gchar *email;
+
+        nickname = json_object_get_string_member(user, "nickname");
+        if (nickname && *nickname) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"Nickname", nickname);
+        }
+
+        first_name = json_object_get_string_member(user, "first_name");
+        if (first_name && *first_name) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"First Name", first_name);
+        }
+
+        last_name = json_object_get_string_member(user, "last_name");
+        if (last_name && *last_name) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"Last Name", last_name);
+        }
+
+        email = json_object_get_string_member(user, "email");
+        if (email && *email) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"Email address", email);
+        }
+
+        purple_notify_userinfo(ma->pc, purple_buddy_get_name(buddy), user_info, NULL, NULL);
+
+        purple_notify_user_info_destroy(user_info);
+}
+
+static void
+mm_get_info(PurpleConnection *pc,const gchar *username)
+{
+        MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+        PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
+        gchar *url;
+
+        if (buddy == NULL) {
+                buddy = purple_buddy_new(ma->account, username, NULL);
+        }
+
+        url = mm_build_url(ma, "/api/v3/users/name/%s", username);
+        mm_fetch_url(ma, url, NULL, mm_info_response, buddy);
+        g_free(url);
+}
+
+
 static void 
 mm_set_me(MattermostAccount *ma)
 {
@@ -3856,6 +3910,7 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->chat_send = mm_chat_send;
 	prpl_info->set_chat_topic = mm_chat_set_topic;
 	prpl_info->add_buddy = mm_add_buddy_no_message;
+	prpl_info->get_info = mm_get_info;
 	
 	prpl_info->roomlist_get_list = mm_roomlist_get_list;
 	prpl_info->roomlist_room_serialize = mm_roomlist_serialize;
