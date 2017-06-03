@@ -3338,17 +3338,23 @@ mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
 	const gchar *first_name = g_list_nth_data(row, 1);
 	const gchar *last_name = g_list_nth_data(row, 2);
 	const gchar *nickname = g_list_nth_data(row, 3);
+    const gchar *email = g_list_nth_data(row, 4);
+    gchar *alias;
 	gchar *full_name;
-	
-	if (!purple_blist_find_buddy(account, username)) {
-		purple_blist_request_add_buddy(account, username, MATTERMOST_DEFAULT_BLIST_GROUP_NAME, nickname);
-	}
-	
+		
 	full_name = g_strconcat(first_name ? first_name : "", (first_name && *first_name) ? " " : "", last_name, NULL);
 	if (*full_name) {
 		purple_serv_got_alias(pc, username, full_name);
 	}
+    
+    alias = g_strdup((nickname && *nickname) ? nickname : (full_name && *full_name) ? full_name : (email && *email) ? email : "");
+
+	if (!purple_blist_find_buddy(account, username)) {
+		purple_blist_request_add_buddy(account, username, MATTERMOST_DEFAULT_BLIST_GROUP_NAME, alias);
+	}
+
 	g_free(full_name);
+    g_free(alias);
 }
 
 static void
@@ -3391,7 +3397,7 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 		return;
 	}
 	
-	/* columns: username, First Name, Last Name */
+	/* columns: username, First Name, Last Name, Email */
 	column = purple_notify_searchresults_column_new(_("Username"));
 	purple_notify_searchresults_column_add(results, column);
 	column = purple_notify_searchresults_column_new(_("First Name"));
@@ -3400,6 +3406,8 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 	purple_notify_searchresults_column_add(results, column);
 	column = purple_notify_searchresults_column_new(_("Nickname"));
 	purple_notify_searchresults_column_add(results, column);
+    column = purple_notify_searchresults_column_new(_("Email"));
+    purple_notify_searchresults_column_add(results, column);
 	
 	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_ADD, mm_search_results_add_buddy);
 	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_INFO, mm_search_results_get_info);
@@ -3416,6 +3424,7 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "first_name")));
 		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "last_name")));
 		row = g_list_append(row, g_strdup(json_object_get_string_member(user, "nickname")));
+        row = g_list_append(row, g_strdup(json_object_get_string_member(user, "email")));
 		
 		purple_notify_searchresults_row_add(results, row);
 		
