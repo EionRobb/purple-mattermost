@@ -116,6 +116,11 @@ json_object_to_string(JsonObject *obj)
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
+#define MATTERMOST_CHANNEL_OPEN 'O'
+#define MATTERMOST_CHANNEL_PRIVATE 'P'
+#define MATTERMOST_CHANNEL_DIRECT 'D'
+#define MATTERMOST_CHANNEL_GROUP 'G'
+
 #define MATTERMOST_DEFAULT_BLIST_GROUP_NAME  _("Mattermost")
 
 
@@ -952,6 +957,7 @@ static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
+static void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -960,6 +966,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	JsonArray *channels = json_node_get_array(node);
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
+	GList *ids = NULL;
 			
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
@@ -967,7 +974,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		const gchar *name = json_object_get_string_member(channel, "display_name");
 		const gchar *room_type = json_object_get_string_member(channel, "type");
 		
-		if (room_type && *room_type == 'D') {
+		if (room_type && *room_type == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, id)) {
 				gchar **buddy_names = g_strsplit(json_object_get_string_member(channel, "name"), "__", 2);
 				gchar *user_id = NULL;
@@ -992,9 +999,11 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 						purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", id);
 						g_hash_table_replace(ma->one_to_ones, g_strdup(id), g_strdup(username));
 						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(id));
+					} else {
+						ids = g_list_append(ids, g_strdup(user_id));
 					}
 				}
-				
+
 				g_strfreev(buddy_names);
 				
 				//TODO if buddy is still NULL, look for details by channel_id
@@ -1023,6 +1032,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		}
 	}
 		
+	mm_get_users_by_ids(ma, ids);
+	//g_list_free(ids); in callback !
 	g_free(team_id);
 }
 
@@ -1119,6 +1130,52 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
         g_free(url);
 }
 
+static void
+mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *response = json_node_get_object(node);
+	PurpleGroup *default_group = mm_get_or_create_default_group();
+	GList *i;
+
+	for (i=user_data;i;i=i->next) {
+		JsonObject *user = json_object_get_object_member(response,i->data);
+		if (user != NULL) {			
+			const gchar *username = json_object_get_string_member(user, "username");
+			if (username != NULL) {          		
+				PurpleBuddy *buddy = purple_buddy_new(ma->account, username, NULL);
+				purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", i->data);
+			}
+		}
+	}
+
+	g_list_free(user_data);
+}
+
+static void
+mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
+{
+	JsonObject *data = json_object_new();
+	JsonArray *user_ids = json_array_new();
+	GList *i;
+	gchar *url, *postdata;
+    
+	for (i = ids; i; i = i->next) {
+		json_array_add_string_element(user_ids, i->data);
+	}
+
+	// How to create unnamed array in json-glib ??
+	json_object_set_array_member(data, "dont-want-name", user_ids);
+	postdata = json_object_to_string(data);
+	url = mm_build_url(ma, "/api/v3/users/ids");
+
+	// g_strrstr -> hack to get unnamed array
+	mm_fetch_url(ma, url, g_strrstr(postdata,"["), mm_get_users_by_ids_response, ids);
+
+	json_object_unref(data);
+	g_free(postdata);
+	g_free(url);       
+}
 
 static void 
 mm_set_me(MattermostAccount *ma)
@@ -1383,7 +1440,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				}
 			}
 			
-			if ((channel_type != NULL && *channel_type != 'D') || g_hash_table_contains(ma->group_chats, channel_id)) {
+			if ((channel_type != NULL && *channel_type != MATTERMOST_CHANNEL_DIRECT) || g_hash_table_contains(ma->group_chats, channel_id)) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 				// PurpleChatUser *cb;
 				
@@ -1428,7 +1485,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
 					purple_serv_got_im(ma->pc, username, message, msg_flags, timestamp);
 					
-					if (channel_type && *channel_type == 'D' && !g_hash_table_contains(ma->one_to_ones, channel_id)) {
+					if (channel_type && *channel_type == MATTERMOST_CHANNEL_DIRECT && !g_hash_table_contains(ma->one_to_ones, channel_id)) {
 						g_hash_table_replace(ma->one_to_ones, g_strdup(channel_id), g_strdup(username));
 						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(channel_id));
 					}
@@ -1673,10 +1730,10 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			room_type = "";
 		}
 		switch(*room_type) {
-			case 'O': type_str = _("Open"); break;
-			case 'P': type_str = _("Private"); break;
-			case 'D': type_str = _("Direct"); break;
-			case 'G': type_str = _("Group"); break;
+			case MATTERMOST_CHANNEL_OPEN: type_str = _("Open"); break;
+			case MATTERMOST_CHANNEL_PRIVATE: type_str = _("Private"); break;
+			case MATTERMOST_CHANNEL_DIRECT: type_str = _("Direct"); break;
+			case MATTERMOST_CHANNEL_GROUP: type_str = _("Group"); break;
 			default:  type_str = _("Unknown"); break;
 		}
 		purple_roomlist_room_add_field(roomlist, room, type_str);
@@ -3599,7 +3656,6 @@ mm_add_buddy_no_message(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *g
 	mm_add_buddy(pc, buddy, group, NULL);
 }
 #endif
-
 
 static const char *
 mm_list_icon(PurpleAccount *account, PurpleBuddy *buddy)
