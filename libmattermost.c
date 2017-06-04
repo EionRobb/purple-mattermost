@@ -972,8 +972,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
-    
-			
+    			
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
 		const gchar *id = json_object_get_string_member(channel, "id");
@@ -993,9 +992,9 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 					user_id = buddy_names[0];
 				}
 				if (user_id != NULL) {
-                    MattermostUser *mm_user = g_new0(MattermostUser,1);
-                    mm_user->room_id=g_strdup(id);
-                    mm_user->user_id=g_strdup(user_id);
+					MattermostUser *mm_user = g_new0(MattermostUser,1);
+					mm_user->room_id=g_strdup(id);
+					mm_user->user_id=g_strdup(user_id);
 
 					username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 					if (username != NULL) {
