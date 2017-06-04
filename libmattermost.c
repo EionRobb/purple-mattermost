@@ -1149,7 +1149,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 	GList *i;
 
 	for (i=user_data;i;i=i->next) {
-        mm_user = i->data;
+		mm_user = i->data;
 		JsonObject *user = json_object_get_object_member(response,mm_user->user_id);
 		if (user != NULL) {			
 			const gchar *username = json_object_get_string_member(user, "username");
@@ -1161,6 +1161,8 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 				g_hash_table_replace(ma->one_to_ones, g_strdup(mm_user->user_id), g_strdup(username));
 				g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(mm_user->user_id));
 			}
+		g_free(mm_user->user_id);
+		g_free(mm_user->room_id);
 		g_free(mm_user);
 		}
 	}
