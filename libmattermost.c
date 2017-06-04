@@ -362,6 +362,11 @@ typedef struct {
 	gpointer user_data;
 } MattermostProxyConnection;
 
+typedef struct {
+	gchar *user_id;
+	gchar *room_id;
+//	gchar *username;
+} MattermostUser;
 
 
 //#include <mkdio.h>
@@ -967,6 +972,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
+    
 			
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
@@ -987,6 +993,10 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 					user_id = buddy_names[0];
 				}
 				if (user_id != NULL) {
+                    MattermostUser *mm_user = g_new0(MattermostUser,1);
+                    mm_user->room_id=g_strdup(id);
+                    mm_user->user_id=g_strdup(user_id);
+
 					username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 					if (username != NULL) {
 						buddy = purple_blist_find_buddy(ma->account, username);
@@ -1000,7 +1010,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 						g_hash_table_replace(ma->one_to_ones, g_strdup(id), g_strdup(username));
 						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(id));
 					} else {
-						ids = g_list_append(ids, g_strdup(user_id));
+						ids = g_list_append(ids, mm_user);
 					}
 				}
 
@@ -1135,17 +1145,23 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 {
 	JsonObject *response = json_node_get_object(node);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
+	MattermostUser *mm_user;	
 	GList *i;
 
 	for (i=user_data;i;i=i->next) {
-		JsonObject *user = json_object_get_object_member(response,i->data);
+        mm_user = i->data;
+		JsonObject *user = json_object_get_object_member(response,mm_user->user_id);
 		if (user != NULL) {			
 			const gchar *username = json_object_get_string_member(user, "username");
 			if (username != NULL) {          		
 				PurpleBuddy *buddy = purple_buddy_new(ma->account, username, NULL);
 				purple_blist_add_buddy(buddy, NULL, default_group, NULL);
-				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", i->data);
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", mm_user->user_id);
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", mm_user->room_id);
+				g_hash_table_replace(ma->one_to_ones, g_strdup(mm_user->user_id), g_strdup(username));
+				g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(mm_user->user_id));
 			}
+		g_free(mm_user);
 		}
 	}
 
@@ -1159,9 +1175,11 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 	JsonArray *user_ids = json_array_new();
 	GList *i;
 	gchar *url, *postdata;
+	MattermostUser *mm_user;
     
 	for (i = ids; i; i = i->next) {
-		json_array_add_string_element(user_ids, i->data);
+		mm_user = i->data;
+		json_array_add_string_element(user_ids, mm_user->user_id);
 	}
 
 	// How to create unnamed array in json-glib ??
