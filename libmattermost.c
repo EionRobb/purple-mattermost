@@ -963,6 +963,7 @@ static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
 static void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
+static void mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy);
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -1139,6 +1140,18 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
         g_free(url);
 }
 
+#define _MM_BLIST_SET(b,u,p,s) \
+{ \
+	if (s) { \
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(b), p, s); \
+	} else { \
+		const gchar *v = json_object_get_string_member(u,p); \
+		if (v && *v) { \
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(b), p, v); \
+		} \
+	} \
+}
+
 static void
 mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1155,11 +1168,19 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 			if (username != NULL) {          		
 				PurpleBuddy *buddy = purple_buddy_new(ma->account, username, NULL);
 				purple_blist_add_buddy(buddy, NULL, default_group, NULL);
-				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", mm_user->user_id);
-				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", mm_user->room_id);
 				g_hash_table_replace(ma->one_to_ones, g_strdup(mm_user->user_id), g_strdup(username));
 				g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(mm_user->user_id));
+
+				_MM_BLIST_SET(buddy,user,"room_id",mm_user->room_id);
+				_MM_BLIST_SET(buddy,user,"user_id",mm_user->user_id);
+				_MM_BLIST_SET(buddy,user,"nickname",NULL);
+				_MM_BLIST_SET(buddy,user,"first_name",NULL);
+				_MM_BLIST_SET(buddy,user,"last_name",NULL);
+				_MM_BLIST_SET(buddy,user,"email",NULL);
+
+				mm_get_avatar(ma,buddy);
 			}
+
 		g_free(mm_user->user_id);
 		g_free(mm_user->room_id);
 		g_free(mm_user);
@@ -1194,6 +1215,40 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 	json_object_unref(data);
 	g_free(postdata);
 	g_free(url);       
+}
+
+#define _MM_TOOLTIP_LINE_ADD(b,u,d,p,o) \
+{ \
+	if (o) { \
+		purple_notify_user_info_add_pair(u,d,o); \
+	} else { \
+		const gchar *v = purple_blist_node_get_string(PURPLE_BLIST_NODE(b),p); \
+		if (v && *v) { \
+			purple_notify_user_info_add_pair(u,d,v); \
+		} \
+	} \
+}
+
+static void 
+mm_tooltip_text(PurpleBuddy *buddy,PurpleNotifyUserInfo *user_info,gboolean full)
+{
+
+	const PurplePresence *presence = purple_buddy_get_presence(buddy);
+	MattermostAccount *ma = purple_connection_get_protocol_data(buddy->account->gc);
+
+	if(ma->username && ma->server) {
+		_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Account"),NULL,g_strconcat(ma->username,(gchar [2]) { MATTERMOST_SERVER_SPLIT_CHAR, '\0' },ma->server,NULL));
+	}
+
+	if(purple_presence_is_online(presence)) {
+		_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Status"),NULL,purple_status_get_name(purple_presence_get_active_status(presence)));
+	}
+
+	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Nickname"),"nickname",NULL);
+	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("First Name"),"first_name",NULL);
+	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Last Name"),"last_name",NULL);
+	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Email"),"email",NULL);
+
 }
 
 static void 
@@ -3613,12 +3668,20 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 }
 
 static void
+mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy)
+{
+	//avatar at https://{server}/api/v3/users/{username}/image
+	gchar *url = mm_build_url(ma, "/api/v3/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"user_id"));
+	mm_fetch_url(ma, url, NULL, mm_got_avatar, buddy);
+	g_free(url);
+}
+
+static void
 mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	const gchar *buddy_name = purple_buddy_get_name(buddy);
 	const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, buddy_name);
-	gchar *avatar_url;
 	
 	if (user_id == NULL) {
 		gchar *url;
@@ -3638,12 +3701,9 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 		return;
 	}
 	
-	//avatar at https://{server}/api/v3/users/{username}/image
-	avatar_url = mm_build_url(ma, "/api/v3/users/%s/image", user_id);
-	mm_fetch_url(ma, avatar_url, NULL, mm_got_avatar, buddy);
-	g_free(avatar_url);
-	
 	purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", user_id);
+	
+	mm_get_avatar(ma,buddy);
 	
 	// Refresh status
 	{
@@ -3995,6 +4055,7 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->set_chat_topic = mm_chat_set_topic;
 	prpl_info->add_buddy = mm_add_buddy_no_message;
 	prpl_info->get_info = mm_get_info;
+	prpl_info->tooltip_text = mm_tooltip_text;
 	
 	prpl_info->roomlist_get_list = mm_roomlist_get_list;
 	prpl_info->roomlist_room_serialize = mm_roomlist_serialize;
@@ -4111,6 +4172,8 @@ mm_protocol_client_iface_init(PurpleProtocolClientIface *prpl_info)
 {
 	prpl_info->get_actions = mm_actions;
 	prpl_info->get_account_text_table = mm_get_account_text_table;
+	prpl_info->get_info = mm_get_info;
+	prpl_info->tooltip_text = mm_tooltip_text;
 }
 
 static void 
