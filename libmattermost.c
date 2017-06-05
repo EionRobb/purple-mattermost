@@ -1237,7 +1237,7 @@ mm_tooltip_text(PurpleBuddy *buddy,PurpleNotifyUserInfo *user_info,gboolean full
 	MattermostAccount *ma = purple_connection_get_protocol_data(buddy->account->gc);
 
 	if(ma->username && ma->server) {
-		_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Account"),NULL,g_strconcat(ma->username,(char [2]) { MATTERMOST_SERVER_SPLIT_CHAR, '\0' },ma->server,NULL));
+		_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Account"),NULL,g_strconcat(ma->username,(gchar [2]) { MATTERMOST_SERVER_SPLIT_CHAR, '\0' },ma->server,NULL));
 	}
 
 	if(purple_presence_is_online(presence)) {
