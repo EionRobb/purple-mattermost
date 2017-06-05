@@ -973,7 +973,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
-    			
+	
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
 		const gchar *id = json_object_get_string_member(channel, "id");
@@ -1220,21 +1220,22 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 #define _MM_TOOLTIP_LINE_ADD(b,u,d,p,o) \
 { \
 	if (o) { \
-		purple_notify_user_info_add_pair(u,d,o); \
+		purple_notify_user_info_add_pair_plaintext(u,d,o); \
 	} else { \
 		const gchar *v = purple_blist_node_get_string(PURPLE_BLIST_NODE(b),p); \
 		if (v && *v) { \
-			purple_notify_user_info_add_pair(u,d,v); \
+			purple_notify_user_info_add_pair_plaintext(u,d,v); \
 		} \
 	} \
 }
 
 static void 
-mm_tooltip_text(PurpleBuddy *buddy,PurpleNotifyUserInfo *user_info,gboolean full)
+mm_tooltip_text(PurpleBuddy *buddy, PurpleNotifyUserInfo *user_info, gboolean full)
 {
-
 	const PurplePresence *presence = purple_buddy_get_presence(buddy);
-	MattermostAccount *ma = purple_connection_get_protocol_data(buddy->account->gc);
+	PurpleAccount *account = purple_buddy_get_account(buddy);
+	PurpleConnection *pc = purple_account_get_connection(account);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 
 	if(ma->username && ma->server) {
 		_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Account"),NULL,g_strconcat(ma->username,(gchar [2]) { MATTERMOST_SERVER_SPLIT_CHAR, '\0' },ma->server,NULL));
@@ -2148,12 +2149,12 @@ mm_login(PurpleAccount *account)
 			json_object_set_string_member(data, "login_id", ma->username);
 			json_object_set_string_member(data, "password", purple_connection_get_password(pc));
 			json_object_set_string_member(data, "token", ""); //TODO 2FA
-		
+			
 			postdata = json_object_to_string(data);
-		
+			
 			url = mm_build_url(ma, "/api/v3/users/login");
 			mm_fetch_url(ma, url, postdata, mm_login_response, NULL);
-		
+			
 			g_free(postdata);
 		}
 		json_object_unref(data);
@@ -3472,7 +3473,7 @@ mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
     const gchar *email = g_list_nth_data(row, 4);
     gchar *alias;
 	gchar *full_name;
-		
+	
 	full_name = g_strconcat(first_name ? first_name : "", (first_name && *first_name) ? " " : "", last_name, NULL);
 	if (*full_name) {
 		purple_serv_got_alias(pc, username, full_name);
@@ -4165,6 +4166,7 @@ mm_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 	prpl_info->add_buddy = mm_add_buddy;
 	prpl_info->set_status = mm_set_status;
 	prpl_info->set_idle = mm_set_idle;
+	prpl_info->get_info = mm_get_info;
 }
 
 static void 
@@ -4172,7 +4174,6 @@ mm_protocol_client_iface_init(PurpleProtocolClientIface *prpl_info)
 {
 	prpl_info->get_actions = mm_actions;
 	prpl_info->get_account_text_table = mm_get_account_text_table;
-	prpl_info->get_info = mm_get_info;
 	prpl_info->tooltip_text = mm_tooltip_text;
 }
 
