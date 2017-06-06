@@ -945,6 +945,56 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 	g_free(cookies);
 }
 
+static void
+mm_send_email_cb(PurpleBuddy *buddy)
+{
+	const gchar *email = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"email");
+	const gchar *first_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"first_name");
+	const gchar *last_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"last_name");
+	gchar *full_email = g_strdup("\"");
+	
+	if (first_name) {
+		full_email = g_strconcat(full_email,first_name," ",NULL);
+	}
+	if (last_name) {
+		full_email = g_strconcat(full_email,last_name," ",NULL);
+	}
+	full_email = g_strconcat(full_email,"<",email,">",NULL);
+	full_email = g_strconcat(full_email,"\"",NULL);
+
+	gchar *cmd_line = g_strdup_printf(
+#ifdef _WIN32
+		"cmd /c start"
+#else
+		"xdg-open"
+#endif
+		" mailto:%s", full_email);
+		
+	g_spawn_command_line_async(cmd_line, NULL);
+	g_free(full_email);
+	g_free(cmd_line);
+}
+
+static GList *
+mm_buddy_menu(PurpleBuddy *buddy)
+{
+	GList *menu = NULL;
+	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"email")) {
+		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"),PURPLE_CALLBACK(mm_send_email_cb),NULL, NULL);
+		menu = g_list_append(menu, action);
+	}
+	return menu;
+}
+
+static GList *
+mm_blist_node_menu(PurpleBlistNode *node)
+{
+	if(PURPLE_BLIST_NODE_IS_BUDDY(node)) {
+		return mm_buddy_menu((PurpleBuddy *) node);
+	}
+	return NULL;
+}
+
 static const gchar *
 mm_get_first_team_id(MattermostAccount *ma)
 {
@@ -4055,6 +4105,7 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->chat_send = mm_chat_send;
 	prpl_info->set_chat_topic = mm_chat_set_topic;
 	prpl_info->add_buddy = mm_add_buddy_no_message;
+	prpl_info->blist_node_menu = mm_blist_node_menu;
 	prpl_info->get_info = mm_get_info;
 	prpl_info->tooltip_text = mm_tooltip_text;
 	
@@ -4174,7 +4225,9 @@ mm_protocol_client_iface_init(PurpleProtocolClientIface *prpl_info)
 {
 	prpl_info->get_actions = mm_actions;
 	prpl_info->get_account_text_table = mm_get_account_text_table;
-	prpl_info->tooltip_text = mm_tooltip_text;
+	prpl_info->blist_node_menu = mm_blist_node_menu;
+  prpl_info->tooltip_text = mm_tooltip_text;
+
 }
 
 static void 
