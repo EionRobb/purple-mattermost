@@ -948,7 +948,6 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 static void
 mm_send_email_cb(PurpleBuddy *buddy)
 {
-<<<<<<< HEAD
 	PurpleBlistNode *bnode = PURPLE_BLIST_NODE(buddy);
 	const gchar *email = purple_blist_node_get_string(bnode, "email");
 	const gchar *first_name = purple_blist_node_get_string(bnode, "first_name");
@@ -967,32 +966,6 @@ mm_send_email_cb(PurpleBuddy *buddy)
 	gchar *uri = g_string_free(full_email, FALSE);
 	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(buddy)), uri);
 	g_free(uri);
-=======
-	const gchar *email = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"email");
-	const gchar *first_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"first_name");
-	const gchar *last_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"last_name");
-	gchar *full_email = g_strdup("\"");
-	
-	if (first_name) {
-		full_email = g_strconcat(full_email,first_name," ",NULL);
-	}
-	if (last_name) {
-		full_email = g_strconcat(full_email,last_name," ",NULL);
-	}
-	full_email = g_strconcat(full_email,"<",email,">",NULL);
-	full_email = g_strconcat(full_email,"\"",NULL);
-
-	gchar *cmd_line = g_strdup_printf(
-#ifdef _WIN32
-		"cmd /c start"
-#else
-		"xdg-open"
-#endif
-		" mailto:%s", full_email);
-		
-	g_spawn_command_line_async(cmd_line, NULL);
-	g_free(full_email);
-	g_free(cmd_line);
 }
 
 static GList *
