@@ -948,30 +948,35 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 static void
 mm_send_email_cb(PurpleBuddy *buddy)
 {
-	const gchar *email = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"email");
-	const gchar *first_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"first_name");
-	const gchar *last_name = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"last_name");
-	gchar *full_email = g_strdup("\"");
+	PurpleBlistNode *bnode = PURPLE_BLIST_NODE(buddy);
+	const gchar *email = purple_blist_node_get_string(bnode, "email");
+	const gchar *first_name = purple_blist_node_get_string(bnode, "first_name");
+	const gchar *last_name = purple_blist_node_get_string(bnode, "last_name");
+	GString *full_email = g_string_new(NULL);
 	
+	g_string_append_printf(full_email, "%s %s",	
+#ifdef _WIN32
+	"cmd /c start",
+#else
+	"xdg-open",
+#endif
+	"mailto:\"");
+
 	if (first_name) {
-		full_email = g_strconcat(full_email,first_name," ",NULL);
+		g_string_append_printf(full_email, "%s ", first_name);
 	}
 	if (last_name) {
-		full_email = g_strconcat(full_email,last_name," ",NULL);
+		g_string_append_printf(full_email, "%s ", last_name);
 	}
-	full_email = g_strconcat(full_email,"<",email,">",NULL);
-	full_email = g_strconcat(full_email,"\"",NULL);
 
-	gchar *cmd_line = g_strdup_printf(
-#ifdef _WIN32
-		"cmd /c start"
-#else
-		"xdg-open"
-#endif
-		" mailto:%s", full_email);
-		
+	g_string_append_printf(full_email, "<%s>\"", email);
+	
+	gchar *cmd_line=g_string_free(full_email, FALSE);
+
+//  ... it needs full path to xdg-open / cmd ...
+//	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(buddy)), cmd_line);
+
 	g_spawn_command_line_async(cmd_line, NULL);
-	g_free(full_email);
 	g_free(cmd_line);
 }
 
@@ -979,8 +984,8 @@ static GList *
 mm_buddy_menu(PurpleBuddy *buddy)
 {
 	GList *menu = NULL;
-	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"email")) {
-		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"),PURPLE_CALLBACK(mm_send_email_cb),NULL, NULL);
+	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "email")) {
+		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"), PURPLE_CALLBACK(mm_send_email_cb), NULL, NULL);
 		menu = g_list_append(menu, action);
 	}
 	return menu;
@@ -989,7 +994,7 @@ mm_buddy_menu(PurpleBuddy *buddy)
 static GList *
 mm_blist_node_menu(PurpleBlistNode *node)
 {
-	if(PURPLE_BLIST_NODE_IS_BUDDY(node)) {
+	if(PURPLE_BUDDY(node)) {
 		return mm_buddy_menu((PurpleBuddy *) node);
 	}
 	return NULL;
