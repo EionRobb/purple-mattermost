@@ -952,16 +952,8 @@ mm_send_email_cb(PurpleBuddy *buddy)
 	const gchar *email = purple_blist_node_get_string(bnode, "email");
 	const gchar *first_name = purple_blist_node_get_string(bnode, "first_name");
 	const gchar *last_name = purple_blist_node_get_string(bnode, "last_name");
-	GString *full_email = g_string_new(NULL);
+	GString *full_email = g_string_new("mailto:");
 	
-	g_string_append_printf(full_email, "%s %s",	
-#ifdef _WIN32
-	"cmd /c start",
-#else
-	"xdg-open",
-#endif
-	"mailto:\"");
-
 	if (first_name) {
 		g_string_append_printf(full_email, "%s ", first_name);
 	}
@@ -969,15 +961,11 @@ mm_send_email_cb(PurpleBuddy *buddy)
 		g_string_append_printf(full_email, "%s ", last_name);
 	}
 
-	g_string_append_printf(full_email, "<%s>\"", email);
+	g_string_append_printf(full_email, "<%s>", email);
 	
-	gchar *cmd_line=g_string_free(full_email, FALSE);
-
-//  ... it needs full path to xdg-open / cmd ...
-//	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(buddy)), cmd_line);
-
-	g_spawn_command_line_async(cmd_line, NULL);
-	g_free(cmd_line);
+	gchar *uri = g_string_free(full_email, FALSE);
+	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(buddy)), uri);
+	g_free(uri);
 }
 
 static GList *
