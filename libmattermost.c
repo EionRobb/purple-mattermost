@@ -4231,7 +4231,7 @@ mm_protocol_client_iface_init(PurpleProtocolClientIface *prpl_info)
 	prpl_info->get_actions = mm_actions;
 	prpl_info->get_account_text_table = mm_get_account_text_table;
 	prpl_info->blist_node_menu = mm_blist_node_menu;
-  prpl_info->tooltip_text = mm_tooltip_text;
+	prpl_info->tooltip_text = mm_tooltip_text;
 
 }
 
