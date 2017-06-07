@@ -999,6 +999,33 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
+int
+mm_strcmp_func(gconstpointer a, gconstpointer b) {
+        return (a && b)?(strcmp((char*)a, (char*)b)):-1;
+}
+
+// we clean channels by room_id: name/alias may change on MM server.
+static void
+mm_clean_channels(MattermostAccount *ma, GList *ids)
+{
+	PurpleBlistNode *node;
+
+	for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
+		if (PURPLE_IS_CHAT(node)) {
+			PurpleChat *chat = PURPLE_CHAT(node);
+			if (purple_chat_get_account(chat) != ma->account) {
+				continue;
+			}
+			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), &mm_strcmp_func) == NULL) {
+				purple_blist_remove_chat(chat);
+			}	
+		} 
+		// if(PURPLE_IS_BUDDY() <- above does not work as expected for buddies: 
+		// direct channels are not destroyed when user is removed from web interface ...
+	}
+	
+}
+
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
 static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
@@ -1016,6 +1043,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
+	GList *seen_ids = NULL;
 	
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
@@ -1023,6 +1051,10 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		const gchar *name = json_object_get_string_member(channel, "display_name");
 		const gchar *room_type = json_object_get_string_member(channel, "type");
 		
+		if(id && *id) {
+			seen_ids=g_list_append(seen_ids,g_strdup(id));
+		}
+
 		if (room_type && *room_type == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, id)) {
 				gchar **buddy_names = g_strsplit(json_object_get_string_member(channel, "name"), "__", 2);
@@ -1087,6 +1119,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		
 	mm_get_users_by_ids(ma, ids);
 	//g_list_free(ids); in callback !
+	mm_clean_channels(ma, seen_ids);
+	g_list_free_full(seen_ids,g_free);	
 	g_free(team_id);
 }
 
