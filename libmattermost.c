@@ -368,6 +368,10 @@ typedef struct {
 //	gchar *username;
 } MattermostUser;
 
+typedef struct {
+	gchar *name;
+	gchar *value;
+} MattermostUserPref;
 
 //#include <mkdio.h>
 extern char markdown_version[];
@@ -430,7 +434,7 @@ mm_markdown_to_html(const gchar *markdown)
 			last_part = markdown_version_split[i++];
 		} while (markdown_version_split[i] != NULL);
 		
-		if (!purple_strequal(last_part, "DEBUG")) {
+		if (!purple_strequal(last_part, "DEBUG")&&0) {
 			markdown_version_safe = TRUE;
 		} else {
 			gint major, minor, micro;
@@ -999,6 +1003,63 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
+int
+mm_strcmp_func(gconstpointer a, gconstpointer b) {
+        return (a && b)?(strcmp((char*)a, (char*)b)):-1;
+}
+
+int 
+mm_userprefcmp_func(gconstpointer a, gconstpointer b) {
+		MattermostUserPref *p1 = (MattermostUserPref *)a;
+		MattermostUserPref *p2 = (MattermostUserPref *)b;
+        return (a && b)?(strcmp((char*)p1->name, (char*)p2->name) && strcmp((char*)p1->value, (char*)p2->value)):-1;
+}
+
+static void mm_get_prefs_category(MattermostAccount *ma, gchar *category, GList *prefs);
+
+// we clean channels by room_id: name/alias may change on MM server.
+static void
+mm_clean_channels(MattermostAccount *ma, GList *ids)
+{
+	PurpleBlistNode *node;
+	GList *prefs;
+
+	mm_get_prefs_category(ma,"direct_channel_show",prefs);
+
+	for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
+		if (PURPLE_IS_CHAT(node)) {
+			PurpleChat *chat = PURPLE_CHAT(node);
+			if (purple_chat_get_account(chat) != ma->account) {
+				continue;
+			}
+			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), &mm_strcmp_func) == NULL) {
+				purple_blist_remove_chat(chat);
+			}	
+		} else if (PURPLE_IS_BUDDY(node)) {
+			PurpleBuddy *buddy = PURPLE_BUDDY(node);
+			if (purple_buddy_get_account(buddy) != ma->account) {
+				continue;
+			}
+			MattermostUserPref *user_pref=g_new0(MattermostUserPref,1);
+			const gchar *user_id=purple_blist_node_get_string(node, "user_id");
+
+			printf ("USER_ID: %s\n",user_id);
+			user_pref->name=g_strdup(user_id);
+			user_pref->value=g_strdup("false");
+
+			MattermostUserPref *pp = g_list_find_custom(prefs, user_pref, &mm_userprefcmp_func);
+
+			if (pp) { printf ("F: %s %s\n",pp->name,pp->value); }
+
+//			if(!) == NULL) {
+//
+//				printf("WILL DELETE: %s\n",user_id);
+//			}
+		}
+	}	
+}
+
+
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
 static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
@@ -1016,12 +1077,17 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
-	
+	GList *seen_ids = NULL;
+
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
 		const gchar *id = json_object_get_string_member(channel, "id");
 		const gchar *name = json_object_get_string_member(channel, "display_name");
 		const gchar *room_type = json_object_get_string_member(channel, "type");
+
+		if(id && *id) {
+			seen_ids=g_list_append(seen_ids,g_strdup(id));
+		}
 		
 		if (room_type && *room_type == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, id)) {
@@ -1087,6 +1153,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		
 	mm_get_users_by_ids(ma, ids);
 	//g_list_free(ids); in callback !
+	mm_clean_channels(ma, seen_ids);
+	g_list_free_full(seen_ids,g_free);	
 	g_free(team_id);
 }
 
@@ -1322,6 +1390,46 @@ mm_get_teams(MattermostAccount *ma)
 	g_free(url);
 	
 }
+
+static void
+mm_get_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+        JsonObject *response = json_node_get_object(node);
+
+		if (json_object_get_int_member(response, "status_code") >= 400) {
+		purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+	        return;
+        }
+
+        JsonArray *arr = json_node_get_array(node);
+        GList *users = json_array_get_elements(arr);
+        GList *prefs = (GList *)user_data;
+        GList *i;
+
+        for (i = users; i; i = i->next) {
+                JsonNode *usernode = i->data;
+                JsonObject *user = json_node_get_object(usernode);
+		        const gchar *name  = json_object_get_string_member(user, "name");
+                const gchar *value = json_object_get_string_member(user, "value");
+				MattermostUserPref *user_pref=g_new0(MattermostUserPref,1);
+				user_pref->name = g_strdup(name);
+				user_pref->value = g_strdup(value);
+				prefs = g_list_append(prefs, user_pref); 
+                printf("PREFS: %s -> %s\n",name,value);
+        }
+}
+
+static void
+mm_get_prefs_category(MattermostAccount *ma, gchar *category, GList *prefs)
+{
+        gchar *url;
+
+        url = mm_build_url(ma, "/api/v3/preferences/%s",category);
+        mm_fetch_url(ma, url, NULL, mm_get_prefs_response, prefs);
+        g_free(url);
+
+}
+
 static void
 mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1350,7 +1458,7 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
         mm_set_me(ma);
-	mm_get_teams(ma);
+		mm_get_teams(ma);
 
 }
 
