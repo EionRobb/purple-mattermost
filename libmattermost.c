@@ -1003,36 +1003,22 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
-int
-mm_strcmp_func(gconstpointer a, gconstpointer b) {
-        return (a && b)?(strcmp((char*)a, (char*)b)):-1;
-}
-
-int 
-mm_userprefcmp_func(gconstpointer a, gconstpointer b) {
-		MattermostUserPref *p1 = (MattermostUserPref *)a;
-		MattermostUserPref *p2 = (MattermostUserPref *)b;
-        return (a && b)?(strcmp((char*)p1->name, (char*)p2->name) && strcmp((char*)p1->value, (char*)p2->value)):-1;
-}
-
-static void mm_get_prefs_category(MattermostAccount *ma, gchar *category, GList *prefs);
+static void mm_get_prefs_category(MattermostAccount *ma, gchar *category, gpointer user_data);
 
 // we clean channels by room_id: name/alias may change on MM server.
 static void
 mm_clean_channels(MattermostAccount *ma, GList *ids)
 {
 	PurpleBlistNode *node;
-	GList *prefs;
-
-	mm_get_prefs_category(ma,"direct_channel_show",prefs);
-
+	GList *user_ids = NULL;
+	
 	for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
 		if (PURPLE_IS_CHAT(node)) {
 			PurpleChat *chat = PURPLE_CHAT(node);
 			if (purple_chat_get_account(chat) != ma->account) {
 				continue;
 			}
-			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), &mm_strcmp_func) == NULL) {
+			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), (GCompareFunc)g_strcmp0) == NULL) {				
 				purple_blist_remove_chat(chat);
 			}	
 		} else if (PURPLE_IS_BUDDY(node)) {
@@ -1040,23 +1026,12 @@ mm_clean_channels(MattermostAccount *ma, GList *ids)
 			if (purple_buddy_get_account(buddy) != ma->account) {
 				continue;
 			}
-			MattermostUserPref *user_pref=g_new0(MattermostUserPref,1);
-			const gchar *user_id=purple_blist_node_get_string(node, "user_id");
-
-			printf ("USER_ID: %s\n",user_id);
-			user_pref->name=g_strdup(user_id);
-			user_pref->value=g_strdup("false");
-
-			MattermostUserPref *pp = g_list_find_custom(prefs, user_pref, &mm_userprefcmp_func);
-
-			if (pp) { printf ("F: %s %s\n",pp->name,pp->value); }
-
-//			if(!) == NULL) {
-//
-//				printf("WILL DELETE: %s\n",user_id);
-//			}
+			user_ids = g_list_append(user_ids, g_strdup(purple_blist_node_get_string(node, "user_id")));
 		}
-	}	
+	}
+
+	mm_get_prefs_category(ma,"direct_channel_show",user_ids);
+	// free user_ids in callback!
 }
 
 
@@ -1391,44 +1366,66 @@ mm_get_teams(MattermostAccount *ma)
 	
 }
 
-static void
-mm_get_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
-{
-        JsonObject *response = json_node_get_object(node);
 
+static void
+mm_get_prefs_category_direct_channel_show_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		JsonObject *response = json_node_get_object(node);
 		if (json_object_get_int_member(response, "status_code") >= 400) {
 		purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
 	        return;
         }
+	} else {
 
         JsonArray *arr = json_node_get_array(node);
         GList *users = json_array_get_elements(arr);
-        GList *prefs = (GList *)user_data;
+        GList *user_ids = user_data;
         GList *i;
+		GList *users_remove = NULL;
 
         for (i = users; i; i = i->next) {
-                JsonNode *usernode = i->data;
-                JsonObject *user = json_node_get_object(usernode);
-		        const gchar *name  = json_object_get_string_member(user, "name");
-                const gchar *value = json_object_get_string_member(user, "value");
-				MattermostUserPref *user_pref=g_new0(MattermostUserPref,1);
-				user_pref->name = g_strdup(name);
-				user_pref->value = g_strdup(value);
-				prefs = g_list_append(prefs, user_pref); 
-                printf("PREFS: %s -> %s\n",name,value);
-        }
+			JsonNode *usernode = i->data;
+			JsonObject *user = json_node_get_object(usernode);
+			const gchar *name  = json_object_get_string_member(user, "name");
+			const gchar *value = json_object_get_string_member(user, "value");
+
+			if (!g_strcmp0(value,"false") && g_list_find_custom(user_ids, name, (GCompareFunc)g_strcmp0)) {
+				PurpleBlistNode *node;
+				for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
+					if (PURPLE_IS_BUDDY(node)) {
+						PurpleBuddy *buddy = PURPLE_BUDDY(node);
+						if (purple_buddy_get_account(buddy) != ma->account) {
+							continue;
+						}
+						if(!g_strcmp0(name, purple_blist_node_get_string(node, "user_id"))) {						
+							users_remove=g_list_append(users_remove,buddy);							
+						}
+					}
+				}				
+			}
+		}
+		for (i = users_remove;i != NULL;i=i->next) {
+					printf ("REMOVE\n");
+					purple_blist_remove_buddy(i->data);
+				}
+	}
 }
 
 static void
-mm_get_prefs_category(MattermostAccount *ma, gchar *category, GList *prefs)
+mm_get_prefs_category(MattermostAccount *ma, gchar *category, gpointer user_data)
 {
-        gchar *url;
-
-        url = mm_build_url(ma, "/api/v3/preferences/%s",category);
-        mm_fetch_url(ma, url, NULL, mm_get_prefs_response, prefs);
-        g_free(url);
+	
+	if (!g_strcmp0(category,"direct_channel_show")) {
+		gchar *url;
+		url = mm_build_url(ma, "/api/v3/preferences/%s",category);
+		mm_fetch_url(ma, url, NULL, mm_get_prefs_category_direct_channel_show_response, user_data);
+		g_free(url);
+	}
 
 }
+
 
 static void
 mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
