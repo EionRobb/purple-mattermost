@@ -1516,31 +1516,30 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
 
-        if (node == NULL) {
+    if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
 		return;
 	}
 
-        response = json_node_get_object(node);
+	response = json_node_get_object(node);
 
-        if (json_object_get_int_member(response, "status_code") >= 400) {
+    if (json_object_get_int_member(response, "status_code") >= 400) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, g_strconcat(json_object_get_string_member(response, "message"),"(Invalid or expired Gitlab cookie)",NULL));
-	        return;
-        }
+		return;
+	}
 
-        g_free(ma->self_user_id);
+	g_free(ma->self_user_id);
 	ma->self_user_id = g_strdup(json_object_get_string_member(response, "id"));
 	g_free(ma->self_username);
 	ma->self_username = g_strdup(json_object_get_string_member(response, "username"));
-        
+
 	if (!ma->self_user_id || !ma->self_username) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
 		return;
 	}
 	
-        mm_set_me(ma);
-		mm_get_teams(ma);
-
+	mm_set_me(ma);
+	mm_get_teams(ma);
 }
 
 static void
@@ -3927,7 +3926,7 @@ mm_remove_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group)
 	pref->user_id = g_strdup(ma->self_user_id);
 	pref->category = g_strdup("direct_channel_show");
 	pref->name = g_strdup(purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
-	pref->value = "false";
+	pref->value = g_strdup("false");
 	mm_save_user_pref(ma, pref);
    	// free pref in callback
 }
