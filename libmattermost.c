@@ -3668,6 +3668,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	if (json_object_has_member(user, "status_code")) {
 		// bad user, delete
 		purple_blist_remove_buddy(buddy);
+		purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 	
