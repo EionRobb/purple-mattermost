@@ -3896,7 +3896,7 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	if (node != NULL) {
 		JsonObject *response = json_node_get_object(node);
-		PurpleBuddy *buddy = user_data;
+		const gchar *buddy_name = user_data;
 		const gchar *response_str;
 		gsize response_len;
 		gpointer response_dup;
@@ -3904,8 +3904,10 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		response_str = g_dataset_get_data(node, "raw_body");
 		response_len = json_object_get_int_member(response, "len");
 		response_dup = g_memdup(response_str, response_len);
-		
-		purple_buddy_icons_set_for_user(ma->account, purple_buddy_get_name(buddy), response_dup, response_len, NULL);
+
+		if(purple_find_buddy(ma->account, buddy_name)) {
+			purple_buddy_icons_set_for_user(ma->account, buddy_name, response_dup, response_len, NULL);
+		}
 	}
 }
 
@@ -3914,7 +3916,8 @@ mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy)
 {
 	//avatar at https://{server}/api/v3/users/{username}/image
 	gchar *url = mm_build_url(ma, "/api/v3/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
-	mm_fetch_url(ma, url, NULL, mm_got_avatar, buddy);
+	const gchar *buddy_name = purple_buddy_get_name(buddy);
+	mm_fetch_url(ma, url, NULL, mm_got_avatar, (gpointer) buddy_name);
 	g_free(url);
 }
 
