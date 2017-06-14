@@ -430,7 +430,7 @@ mm_markdown_to_html(const gchar *markdown)
 			last_part = markdown_version_split[i++];
 		} while (markdown_version_split[i] != NULL);
 		
-		if (!purple_strequal(last_part, "DEBUG")&&0) {
+		if (!purple_strequal(last_part, "DEBUG")) {
 			markdown_version_safe = TRUE;
 		} else {
 			gint major, minor, micro;
