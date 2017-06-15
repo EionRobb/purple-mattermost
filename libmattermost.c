@@ -96,7 +96,7 @@ json_array_to_string(JsonArray *array)
 	JsonGenerator *generator;
 
 	node = json_node_new(JSON_NODE_OBJECT);
-	json_node_init_array(node, array);
+	json_node_set_array(node, array);
 
 	// a json string ...
 	generator = json_generator_new();
