@@ -3906,7 +3906,7 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		response_len = json_object_get_int_member(response, "len");
 		response_dup = g_memdup(response_str, response_len);
 
-		if(purple_find_buddy(ma->account, buddy_name)) {
+		if(purple_blist_find_buddy(ma->account, buddy_name)) {
 			purple_buddy_icons_set_for_user(ma->account, buddy_name, response_dup, response_len, NULL);
 		}
 	}
