@@ -88,6 +88,25 @@ json_object_to_string(JsonObject *obj)
 	return str;
 }
 
+static gchar *
+json_array_to_string(JsonArray *array)
+{
+	JsonNode *node;
+	gchar *str;
+	JsonGenerator *generator;
+
+	node = json_node_new(JSON_NODE_OBJECT);
+	json_node_set_array(node, array);
+
+	// a json string ...
+	generator = json_generator_new();
+	json_generator_set_root(generator, node);
+	str = json_generator_to_data(generator, NULL);
+	g_object_unref(generator);
+	json_node_free(node);
+	
+	return str;
+}
 
 #include <purple.h>
 #if PURPLE_VERSION_CHECK(3, 0, 0)
@@ -368,6 +387,12 @@ typedef struct {
 //	gchar *username;
 } MattermostUser;
 
+typedef struct {
+	gchar *user_id;
+	gchar *category;
+	gchar *name;
+	gchar *value;
+} MattermostUserPref;
 
 //#include <mkdio.h>
 extern char markdown_version[];
@@ -1000,6 +1025,43 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
+static void mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *prefs);
+
+// we clean channels by room_id: name/alias may change on MM server.
+static void
+mm_clean_channels(MattermostAccount *ma, GList *ids)
+{
+	PurpleBlistNode *node;
+	GList *prefs = NULL;
+	
+	for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
+		if (PURPLE_IS_CHAT(node)) {
+			PurpleChat *chat = PURPLE_CHAT(node);
+			if (purple_chat_get_account(chat) != ma->account) {
+				continue;
+			}
+			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), (GCompareFunc)g_strcmp0) == NULL) {				
+				purple_blist_remove_chat(chat);
+			}	
+		} else if (PURPLE_IS_BUDDY(node)) {
+			PurpleBuddy *buddy = PURPLE_BUDDY(node);
+			if (purple_buddy_get_account(buddy) != ma->account) {
+				continue;
+			}
+			MattermostUserPref *pref = g_new0(MattermostUserPref,1);
+			pref->user_id = g_strdup(ma->self_user_id);
+			pref->category = g_strdup("direct_channel_show"); 
+			pref->name = g_strdup(purple_blist_node_get_string(node, "user_id"));
+			pref->value = g_strdup("false");
+			prefs = g_list_append(prefs, pref);
+		}
+	}
+
+	mm_list_user_prefs(ma, "direct_channel_show", prefs);
+	// free prefs in callback!
+}
+
+
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
 static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
@@ -1017,12 +1079,17 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	guint i, len = json_array_get_length(channels);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
-	
+	GList *seen_ids = NULL;
+
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
 		const gchar *id = json_object_get_string_member(channel, "id");
 		const gchar *name = json_object_get_string_member(channel, "display_name");
 		const gchar *room_type = json_object_get_string_member(channel, "type");
+
+		if(id && *id) {
+			seen_ids=g_list_prepend(seen_ids,g_strdup(id));
+		}
 		
 		if (room_type && *room_type == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, id)) {
@@ -1088,6 +1155,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		
 	mm_get_users_by_ids(ma, ids);
 	//g_list_free(ids); in callback !
+	mm_clean_channels(ma, seen_ids);
+	g_list_free_full(seen_ids,g_free);	
 	g_free(team_id);
 }
 
@@ -1323,36 +1392,155 @@ mm_get_teams(MattermostAccount *ma)
 	g_free(url);
 	
 }
+
+static void 
+mm_save_user_pref_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	MattermostUserPref *pref = user_data;
+	g_free(pref);
+	
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		JsonObject *response = json_node_get_object(node);
+		if (json_object_get_int_member(response, "status_code") >= 400) {
+			purple_notify_error(ma->pc, _("Save Preferences Error"), _("There was an error saving user preferences"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+		return;
+        }
+	}
+}
+
+static void
+mm_save_user_pref(MattermostAccount *ma, MattermostUserPref *pref)
+{
+	JsonArray *data = json_array_new();
+	JsonObject *pref_data = json_object_new();
+	gchar *postdata, *url;
+	
+	json_object_set_string_member(pref_data, "user_id", pref->user_id);
+	json_object_set_string_member(pref_data, "category", pref->category);
+	json_object_set_string_member(pref_data, "name", pref->name);
+	json_object_set_string_member(pref_data, "value", pref->value);
+
+	json_array_add_object_element(data,pref_data);
+	postdata = json_array_to_string(data);
+	
+	if (purple_strequal(pref->category,"direct_channel_show")) {
+		url = mm_build_url(ma, "/api/v3/preferences/save");
+		mm_fetch_url(ma, url, postdata, mm_save_user_pref_response, pref);
+	}
+
+	g_free(postdata);
+	json_array_unref(data);
+}
+
+int
+mm_compare_prefs_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostUserPref *p1 = a;
+	const MattermostUserPref *p2 = b;
+
+	if (!(g_strcmp0(p1->user_id,p2->user_id) &&
+		g_strcmp0(p1->category,p2->category) &&
+		g_strcmp0(p1->name,p2->name) &&
+		g_strcmp0(p1->value,p2->value))) {
+		return 0;
+	} 
+	return -1;
+}
+
+static void
+mm_list_user_prefs_direct_channel_show_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		JsonObject *response = json_node_get_object(node);
+		if (json_object_get_int_member(response, "status_code") >= 400) {
+			purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+			return;
+		}
+	} else {
+
+        JsonArray *arr = json_node_get_array(node);
+        GList *users = json_array_get_elements(arr);
+        GList *prefs = user_data;
+        GList *i;
+		GList *remove_users = NULL;
+		MattermostUserPref *pref = g_new0(MattermostUserPref,1);
+
+        for (i = users; i != NULL; i = i->next) {
+	
+			JsonNode *usernode = i->data;
+			JsonObject *user = json_node_get_object(usernode);
+
+			pref->user_id = g_strdup(json_object_get_string_member(user, "user_id"));
+			pref->category = g_strdup(json_object_get_string_member(user, "category"));
+			pref->name = g_strdup(json_object_get_string_member(user, "name"));
+			pref->value = g_strdup(json_object_get_string_member(user, "value"));
+			
+			if (g_list_find_custom(prefs, pref, mm_compare_prefs_int)) {
+				PurpleBlistNode *node;
+				for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
+					if (PURPLE_IS_BUDDY(node)) {
+						PurpleBuddy *buddy = PURPLE_BUDDY(node);
+						if (purple_buddy_get_account(buddy) != ma->account) {
+							continue;
+						}
+						if(purple_strequal(pref->value,"false") && purple_strequal(pref->name, purple_blist_node_get_string(node, "user_id"))) {					
+							remove_users=g_list_prepend(remove_users,buddy);							
+						}
+					}
+				}				
+			}
+		}
+		for (i = remove_users;i != NULL;i=i->next) {
+			purple_blist_remove_buddy(PURPLE_BUDDY(i->data));
+			// BUG??: sometimes segfaults (libpurple 2.10.7 / RHEL7) while removing > 3-4 buddies ??BUG
+		}
+	}
+}
+
+static void
+mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *prefs)
+{
+	
+	if (purple_strequal(category,"direct_channel_show")) {
+		gchar *url;
+		url = mm_build_url(ma, "/api/v3/preferences/%s",category);
+		mm_fetch_url(ma, url, NULL, mm_list_user_prefs_direct_channel_show_response, prefs);
+		g_free(url);
+	}
+
+}
+
+
 static void
 mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
 
-        if (node == NULL) {
+    if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
 		return;
 	}
 
-        response = json_node_get_object(node);
+	response = json_node_get_object(node);
 
-        if (json_object_get_int_member(response, "status_code") >= 400) {
+    if (json_object_get_int_member(response, "status_code") >= 400) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, g_strconcat(json_object_get_string_member(response, "message"),"(Invalid or expired Gitlab cookie)",NULL));
-	        return;
-        }
+		return;
+	}
 
-        g_free(ma->self_user_id);
+	g_free(ma->self_user_id);
 	ma->self_user_id = g_strdup(json_object_get_string_member(response, "id"));
 	g_free(ma->self_username);
 	ma->self_username = g_strdup(json_object_get_string_member(response, "username"));
-        
+
 	if (!ma->self_user_id || !ma->self_username) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
 		return;
 	}
 	
-        mm_set_me(ma);
+	mm_set_me(ma);
 	mm_get_teams(ma);
-
 }
 
 static void
@@ -3419,13 +3607,14 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 	if (room_id == NULL) {
 		JsonObject *data;
 		gchar *url, *postdata;
+		const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, who);
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
 		PurpleMessage *msg = purple_message_new_outgoing(who, message, flags);
 #endif
 		
 		data = json_object_new();
 		
-		json_object_set_string_member(data, "user_id", g_hash_table_lookup(ma->usernames_to_ids, who));
+		json_object_set_string_member(data, "user_id", user_id);
 		
 		postdata = json_object_to_string(data);
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", team_id);
@@ -3435,6 +3624,15 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 		g_free(postdata);
 		json_object_unref(data);
 		
+		MattermostUserPref *pref = g_new0(MattermostUserPref, 1);
+		pref->user_id = g_strdup(ma->self_user_id);
+		pref->category = g_strdup("direct_channel_show");
+		pref->name = g_strdup(user_id);
+		pref->value = g_strdup("true");
+
+		mm_save_user_pref(ma, pref);
+		// free pref in callback
+
 		return 1;
 	}
 	
@@ -3669,6 +3867,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	if (json_object_has_member(user, "status_code")) {
 		// bad user, delete
 		purple_blist_remove_buddy(buddy);
+		purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 	
@@ -3699,7 +3898,7 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	if (node != NULL) {
 		JsonObject *response = json_node_get_object(node);
-		PurpleBuddy *buddy = user_data;
+		const gchar *buddy_name = user_data;
 		const gchar *response_str;
 		gsize response_len;
 		gpointer response_dup;
@@ -3707,8 +3906,10 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		response_str = g_dataset_get_data(node, "raw_body");
 		response_len = json_object_get_int_member(response, "len");
 		response_dup = g_memdup(response_str, response_len);
-		
-		purple_buddy_icons_set_for_user(ma->account, purple_buddy_get_name(buddy), response_dup, response_len, NULL);
+
+		if(purple_blist_find_buddy(ma->account, buddy_name)) {
+			purple_buddy_icons_set_for_user(ma->account, buddy_name, response_dup, response_len, NULL);
+		}
 	}
 }
 
@@ -3716,9 +3917,35 @@ static void
 mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy)
 {
 	//avatar at https://{server}/api/v3/users/{username}/image
-	gchar *url = mm_build_url(ma, "/api/v3/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"user_id"));
-	mm_fetch_url(ma, url, NULL, mm_got_avatar, buddy);
+	gchar *url = mm_build_url(ma, "/api/v3/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
+	const gchar *buddy_name = g_strdup(purple_buddy_get_name(buddy));
+	mm_fetch_url(ma, url, NULL, mm_got_avatar, (gpointer) buddy_name);
 	g_free(url);
+}
+
+static void
+mm_fake_group_buddy(PurpleConnection *pc, const char *who, const char *old_group, const char *new_group)
+{
+	// Do nothing to stop the remove+add behaviour
+}
+
+static void
+mm_fake_group_rename(PurpleConnection *pc, const char *old_name, PurpleGroup *group, GList *moved_buddies)
+{
+	// Do nothing to stop the remove+add behaviour
+}
+
+static void 
+mm_remove_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group)
+{
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	MattermostUserPref *pref = g_new0(MattermostUserPref,1);
+	pref->user_id = g_strdup(ma->self_user_id);
+	pref->category = g_strdup("direct_channel_show");
+	pref->name = g_strdup(purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
+	pref->value = g_strdup("false");
+	mm_save_user_pref(ma, pref);
+   	// free pref in callback
 }
 
 static void
@@ -3749,6 +3976,13 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 	purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", user_id);
 	
 	mm_get_avatar(ma,buddy);
+	MattermostUserPref *pref = g_new0(MattermostUserPref,1);
+	pref->user_id = g_strdup(ma->self_user_id);
+	pref->category = g_strdup("direct_channel_show");
+	pref->name = g_strdup(user_id);
+	pref->value = g_strdup("true");
+	mm_save_user_pref(ma,pref);
+	// free pref in callback
 	
 	// Refresh status
 	{
@@ -4099,6 +4333,9 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->chat_send = mm_chat_send;
 	prpl_info->set_chat_topic = mm_chat_set_topic;
 	prpl_info->add_buddy = mm_add_buddy_no_message;
+	prpl_info->remove_buddy = mm_remove_buddy;
+	prpl_info->group_buddy = mm_fake_group_buddy;
+	prpl_info->rename_group = mm_fake_group_rename;
 	prpl_info->blist_node_menu = mm_blist_node_menu;
 	prpl_info->get_info = mm_get_info;
 	prpl_info->tooltip_text = mm_tooltip_text;
@@ -4209,6 +4446,9 @@ static void
 mm_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 {
 	prpl_info->add_buddy = mm_add_buddy;
+	prpl_info->remove_buddy = mm_remove_buddy;
+	prpl_info->group_buddy = mm_fake_group_buddy;
+	prpl_info->rename_group = mm_fake_group_rename;
 	prpl_info->set_status = mm_set_status;
 	prpl_info->set_idle = mm_set_idle;
 	prpl_info->get_info = mm_get_info;
