@@ -95,7 +95,7 @@ json_array_to_string(JsonArray *array)
 	gchar *str;
 	JsonGenerator *generator;
 
-	node = json_node_new(JSON_NODE_OBJECT);
+	node = json_node_new(JSON_NODE_ARRAY);
 	json_node_set_array(node, array);
 
 	// a json string ...
