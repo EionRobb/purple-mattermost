@@ -1087,7 +1087,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		const gchar *room_type = json_object_get_string_member(channel, "type");
 
 		if(id && *id) {
-			seen_ids=g_list_append(seen_ids,g_strdup(id));
+			seen_ids=g_list_prepend(seen_ids,g_strdup(id));
 		}
 		
 		if (room_type && *room_type == MATTERMOST_CHANNEL_DIRECT) {
@@ -1422,7 +1422,7 @@ mm_save_user_pref(MattermostAccount *ma, MattermostUserPref *pref)
 	json_array_add_object_element(data,pref_data);
 	postdata = json_array_to_string(data);
 	
-	if (!g_strcmp0(pref->category,"direct_channel_show")) {
+	if (purple_strequal(pref->category,"direct_channel_show")) {
 		url = mm_build_url(ma, "/api/v3/preferences/save");
 		mm_fetch_url(ma, url, postdata, mm_save_user_pref_response, pref);
 	}
@@ -1453,9 +1453,9 @@ mm_list_user_prefs_direct_channel_show_response(MattermostAccount *ma, JsonNode 
 	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
 		JsonObject *response = json_node_get_object(node);
 		if (json_object_get_int_member(response, "status_code") >= 400) {
-		purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
-	        return;
-        }
+			purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+			return;
+		}
 	} else {
 
         JsonArray *arr = json_node_get_array(node);
@@ -1483,8 +1483,8 @@ mm_list_user_prefs_direct_channel_show_response(MattermostAccount *ma, JsonNode 
 						if (purple_buddy_get_account(buddy) != ma->account) {
 							continue;
 						}
-						if(!g_strcmp0(pref->value,"false") && !g_strcmp0(pref->name, purple_blist_node_get_string(node, "user_id"))) {					
-							remove_users=g_list_append(remove_users,buddy);							
+						if(purple_strequal(pref->value,"false") && purple_strequal(pref->name, purple_blist_node_get_string(node, "user_id"))) {					
+							remove_users=g_list_prepend(remove_users,buddy);							
 						}
 					}
 				}				
@@ -1501,7 +1501,7 @@ static void
 mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *prefs)
 {
 	
-	if (!g_strcmp0(category,"direct_channel_show")) {
+	if (purple_strequal(category,"direct_channel_show")) {
 		gchar *url;
 		url = mm_build_url(ma, "/api/v3/preferences/%s",category);
 		mm_fetch_url(ma, url, NULL, mm_list_user_prefs_direct_channel_show_response, prefs);
@@ -3916,9 +3916,21 @@ mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy)
 {
 	//avatar at https://{server}/api/v3/users/{username}/image
 	gchar *url = mm_build_url(ma, "/api/v3/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
-	const gchar *buddy_name = purple_buddy_get_name(buddy);
+	const gchar *buddy_name = g_strdup(purple_buddy_get_name(buddy));
 	mm_fetch_url(ma, url, NULL, mm_got_avatar, (gpointer) buddy_name);
 	g_free(url);
+}
+
+static void
+mm_fake_group_buddy(PurpleConnection *pc, const char *who, const char *old_group, const char *new_group)
+{
+	// Do nothing to stop the remove+add behaviour
+}
+
+static void
+mm_fake_group_rename(PurpleConnection *pc, const char *old_name, PurpleGroup *group, GList *moved_buddies)
+{
+	// Do nothing to stop the remove+add behaviour
 }
 
 static void 
@@ -4320,6 +4332,8 @@ plugin_init(PurplePlugin *plugin)
 	prpl_info->set_chat_topic = mm_chat_set_topic;
 	prpl_info->add_buddy = mm_add_buddy_no_message;
 	prpl_info->remove_buddy = mm_remove_buddy;
+	prpl_info->group_buddy = mm_fake_group_buddy;
+	prpl_info->rename_group = mm_fake_group_rename;
 	prpl_info->blist_node_menu = mm_blist_node_menu;
 	prpl_info->get_info = mm_get_info;
 	prpl_info->tooltip_text = mm_tooltip_text;
@@ -4431,6 +4445,8 @@ mm_protocol_server_iface_init(PurpleProtocolServerIface *prpl_info)
 {
 	prpl_info->add_buddy = mm_add_buddy;
 	prpl_info->remove_buddy = mm_remove_buddy;
+	prpl_info->group_buddy = mm_fake_group_buddy;
+	prpl_info->rename_group = mm_fake_group_rename;
 	prpl_info->set_status = mm_set_status;
 	prpl_info->set_idle = mm_set_idle;
 	prpl_info->get_info = mm_get_info;
