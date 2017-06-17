@@ -3741,6 +3741,8 @@ mm_channel_create_response(MattermostAccount *ma, JsonNode *node, gpointer user_
 {
 	MattermostChannel *mc = user_data;	
 	JsonObject *response = json_node_get_object(node);
+	const gchar *room_id;
+	PurpleBuddy *buddy;
 
     if (json_object_get_int_member(response, "status_code") >= 400) {
 		purple_notify_error(ma->pc, "Error", "Error creating Mattermost Channel", json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
@@ -3749,7 +3751,15 @@ mm_channel_create_response(MattermostAccount *ma, JsonNode *node, gpointer user_
 
 	switch (mc->type) {
 		case MATTERMOST_CHANNEL_DIRECT:
-			//TODO move mm_add_buddy(ma->pc, buddy, group, NULL); here ?
+			room_id = json_object_get_string_member(response, "id");
+			if (room_id != NULL && mc->name != NULL) {
+				g_hash_table_replace(ma->one_to_ones, g_strdup(room_id), g_strdup(mc->name));
+				g_hash_table_replace(ma->one_to_ones_rev, g_strdup(mc->name), g_strdup(room_id));
+			}
+			buddy = purple_blist_find_buddy(ma->account, mc->name);
+			if (buddy != NULL) {
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", room_id);
+				}
 			break;
 //		case MATTERMOST_CHANNEL_GROUP:
 		case MATTERMOST_CHANNEL_PRIVATE:
@@ -3814,7 +3824,8 @@ mm_channel_delete_response(MattermostAccount *ma, JsonNode *node, gpointer user_
 
 	switch (mc->type) {
 		case MATTERMOST_CHANNEL_DIRECT:
-			//TODO: remove buddy
+//			g_hash_table_remove(ma->one_to_ones, mc->username, room_id);
+//			g_hash_table_remove(ma->one_to_ones_rev, room_id, mc->username);
 			break;
 //		case MATTERMOST_CHANNEL_GROUP:
 		case MATTERMOST_CHANNEL_PRIVATE:
