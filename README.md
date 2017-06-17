@@ -23,6 +23,7 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 - Display of messages sent while Pidgin was offline. 
 - Mark messages edited by a Mattermost user as "Edited:"
 - If Mattermost [enables public file links](https://docs.mattermost.com/administration/config-settings.html#enable-public-file-links) (off by default) file sharing links can be displayed in Pidgin. 
+- Display of emojis (install [Pidgin EmojiOne smileys theme]https://github.com/niclashoyer/pidgin-emojione)
 
 **Group Discussions**
 
