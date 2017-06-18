@@ -440,43 +440,43 @@ mm_markdown_to_html(const gchar *markdown)
 	int markdown_len;
 	int flags = MKD_NOPANTS | MKD_NODIVQUOTE | MKD_NODLIST;
 	static gboolean markdown_version_checked = FALSE;
-	static gboolean markdown_version_safe = FALSE;
+	static gboolean markdown_version_safe = TRUE;
 	
 	if (markdown == NULL) {
 		return NULL;
 	}
 	
 	if (!markdown_version_checked) {
-		gchar **markdown_version_split = g_strsplit_set(	markdown_version, ". ", -1);
-		gchar *last_part;
-		guint i = 0;
+		gchar **markdown_version_split = g_strsplit_set(markdown_version, ". ", -1);
+		gint major, minor, micro;
 
-		do {
-			last_part = markdown_version_split[i++];
-		} while (markdown_version_split[i] != NULL);
-		
-		if (!purple_strequal(last_part, "DEBUG")) {
-			markdown_version_safe = TRUE;
-		} else {
-			gint major, minor, micro;
-			major = atoi(markdown_version_split[0]);
-			if (major > 2) {
-				markdown_version_safe = TRUE;
-			} else if (major == 2) {
-				minor = atoi(markdown_version_split[1]);
-				if (minor > 2) {
-					markdown_version_safe = TRUE;
-				} else if (minor == 2) {
-					micro = atoi(markdown_version_split[2]);
-					if (micro > 2) {
-						markdown_version_safe = TRUE;
-					}
+		major = atoi(markdown_version_split[0]);
+		if (major > 2) {
+			markdown_version_checked = TRUE;
+		} else if (major == 2) {
+			minor = atoi(markdown_version_split[1]);
+			if (minor > 2) {
+				markdown_version_checked = TRUE;
+			} else if (minor == 2) {
+				micro = atoi(markdown_version_split[2]);
+				if (micro > 2) {
+					markdown_version_checked = TRUE;
 				}
 			}
 		}
 		
+		if (!markdown_version_checked) {
+			guint i;
+			for(i = 0; markdown_version_split[i]; i++) {
+				if (purple_strequal(markdown_version_split[i], "DEBUG")) {
+					markdown_version_safe = FALSE;
+					break;
+				}
+			}
+			markdown_version_checked = TRUE;
+		}
+		
 		g_strfreev(markdown_version_split);
-		markdown_version_checked = TRUE;
 	}
 	
 	if (markdown_str != NULL) {
