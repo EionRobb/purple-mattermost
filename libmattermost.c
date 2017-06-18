@@ -1871,7 +1871,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		}
 	}
 	
-	if (purple_strequal(event, "posted") || purple_strequal(event, "post_edited")) {
+	if (purple_strequal(event, "posted") || purple_strequal(event, "post_edited") || purple_strequal(event, "ephemeral_message")) {
 		gint64 last_message_timestamp;
 		JsonParser *post_parser = json_parser_new();
 		const gchar *post_str = json_object_get_string_member(data, "post");
@@ -4167,7 +4167,13 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	}
 	
 	params_str = g_strjoinv(" ", args);
-	original_msg = g_strconcat("/", cmd, " ", params_str, NULL);
+
+	if (purple_strequal(cmd,"cmd")) {
+		original_msg = g_strconcat("/", params_str, NULL);
+	} else {
+		original_msg = g_strconcat("/", cmd, " ", params_str, NULL);
+	}
+
 	g_free(params_str);
 	
 	data = json_object_new();
@@ -4251,6 +4257,11 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_slash_command,
 						_("shrug message:  Post a message as yourelf followed by 'shrug'"), NULL);
+
+	purple_cmd_register("cmd", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command,
+						_("cmd <command>:  Pass slash command to Mattermost server / BOT"), NULL);
 	
 	return TRUE;
 }
