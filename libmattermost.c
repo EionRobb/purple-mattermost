@@ -117,8 +117,7 @@ json_named_array_from_string(const gchar *name, const gchar *str)
 	gchar *data = g_strconcat("{\"", name , "\":", str, "}", NULL);
 
 	if (json_parser_load_from_data(parser, data, -1, NULL)) {
-		array = json_object_get_array_member(json_node_get_object(json_parser_get_root(parser)), name); 
-
+		array = json_object_get_array_member(json_node_get_object(json_parser_get_root(parser)), name);
 	}
 
 	g_free(data);
@@ -1068,7 +1067,6 @@ mm_clean_channels(MattermostAccount *ma, GList *ids)
 				pref->value = g_strdup("false");
 				group_prefs = g_list_prepend(group_prefs, pref);
 			}
-
 		} else if (PURPLE_IS_BUDDY(node)) {
 			PurpleBuddy *buddy = PURPLE_BUDDY(node);
 			if (purple_buddy_get_account(buddy) != ma->account) {
@@ -1346,8 +1344,6 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 	} \
 }
 
-
-
 static void
 mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1398,8 +1394,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 
 static void
 mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
-{
-	
+{	
 	GList *i;
 	gchar *url, *postdata;
 	MattermostUser *mm_user;
@@ -1549,7 +1544,6 @@ mm_compare_prefs_int(gconstpointer a, gconstpointer b)
 static void
 mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-
 	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
 		JsonObject *response = json_node_get_object(node);
 		if (json_object_get_int_member(response, "status_code") >= 400) {
@@ -1557,7 +1551,6 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 			return;
 		}
 	} else {
-
         JsonArray *arr = json_node_get_array(node);
         GList *users = json_array_get_elements(arr);
         GList *prefs = user_data;
