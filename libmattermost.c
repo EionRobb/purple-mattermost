@@ -2098,12 +2098,12 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			}
 			if (purple_strequal(json_object_get_string_member(object, "category"), "group_channel_show")) {
 				if (purple_strequal(json_object_get_string_member(object, "value"), "false")) {
-					if (g_hash_table_contains(ma->group_chats_rev, id)) {
-						const gchar *chat_name = g_hash_table_lookup(ma->group_chats_rev, id);
+					if (g_hash_table_contains(ma->group_chats, id)) {
+						const gchar *chat_name = g_hash_table_lookup(ma->group_chats, id);
 						PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
 						if (chat) {
-							g_hash_table_remove(ma->group_chats_rev, id);
-							g_hash_table_remove(ma->group_chats, chat_name);
+							g_hash_table_remove(ma->group_chats, id);
+							g_hash_table_remove(ma->group_chats_rev, chat_name);
 							purple_blist_remove_chat(chat);
 						}
 					}
