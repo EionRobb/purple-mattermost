@@ -1070,6 +1070,8 @@ static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
 static void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
 static void mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy);
 
+static void mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id);
+
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1079,6 +1081,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	GList *ids = NULL;
 	GList *seen_ids = NULL;
+	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
@@ -1148,6 +1151,21 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 				g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 				
 				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
+
+				if (autojoin) {
+					PurpleChatConversation *chatconv = NULL;
+
+					purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", TRUE);
+					chatconv = purple_serv_got_joined_chat(ma->pc, g_str_hash(id), name ? name : id);
+					purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
+
+					if (team_id != NULL) {
+						purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
+					}
+
+					purple_conversation_present(PURPLE_CONVERSATION(chatconv));
+					mm_join_room(ma, g_strdup(team_id), g_strdup(id));
+				}
 			}
 		}
 	}
@@ -4062,6 +4080,9 @@ mm_add_account_options(GList *account_options)
 	account_options = g_list_append(account_options, option);
 
 	option = purple_account_option_bool_new(N_("Password is Gitlab cookie"), "use-mmauthtoken", FALSE);
+	account_options = g_list_append(account_options, option);
+
+	option = purple_account_option_bool_new(N_("Auto-Join new chats"), "use-autojoin", FALSE);
 	account_options = g_list_append(account_options, option);
 	
 	return account_options;
