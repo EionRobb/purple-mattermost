@@ -1059,7 +1059,7 @@ mm_clean_channels(MattermostAccount *ma, GList *ids)
 			if (g_list_find_custom(ids, purple_blist_node_get_string(node, "room_id"), (GCompareFunc)g_strcmp0) == NULL) {				
 				purple_blist_remove_chat(chat);
 			} else {	
-				// Chat can be a group channel .. 
+				// Chat can be a group channel . 
 				MattermostUserPref *pref = g_new0(MattermostUserPref,1);
 				pref->user_id = g_strdup(ma->self_user_id);
 				pref->category = g_strdup("direct_channel_show"); 
@@ -1175,11 +1175,12 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 				g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 				
 				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
-
-				// but it can be a 'hidden' group chat...			
-				MattermostUser *mm_user = g_new0(MattermostUser,1);
-				mm_user->user_id=g_strdup(id);
-				ids = g_list_append(ids,mm_user);
+		
+				if (room_type && *room_type == MATTERMOST_CHANNEL_GROUP) {
+					MattermostUser *mm_user = g_new0(MattermostUser,1);
+					mm_user->user_id=g_strdup(id);
+					ids = g_list_append(ids,mm_user);
+				}
 			}
 		}
 	}
@@ -1300,7 +1301,11 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	const gchar *id = json_object_get_string_member(channel, "id");
     const gchar *name = json_object_get_string_member(channel, "display_name");
     
-	if (!g_hash_table_contains(ma->group_chats, id)) { // NULL crash ?
+	g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
+	g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
+	
+	if (!purple_blist_find_chat(ma->account, id)) { 
+
 		PurpleChat *chat = NULL;
 		GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
 
@@ -1394,7 +1399,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 
 static void
 mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
-{	
+{
 	GList *i;
 	gchar *url, *postdata;
 	MattermostUser *mm_user;
@@ -1551,15 +1556,14 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 			return;
 		}
 	} else {
-        JsonArray *arr = json_node_get_array(node);
-        GList *users = json_array_get_elements(arr);
-        GList *prefs = user_data;
-        GList *i;
+        	JsonArray *arr = json_node_get_array(node);
+        	GList *users = json_array_get_elements(arr);
+        	GList *prefs = user_data;
+        	GList *i;
 		GList *remove_nodes = NULL;
-
 		MattermostUserPref *pref = g_new0(MattermostUserPref,1);
 
-        for (i = users; i != NULL; i = i->next) {
+	        for (i = users; i != NULL; i = i->next) {
 	
 			JsonNode *usernode = i->data;
 			JsonObject *user = json_node_get_object(usernode);
@@ -1571,7 +1575,6 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 			
 			if (g_list_find_custom(prefs, pref, mm_compare_prefs_int)) {
 				PurpleBlistNode *node;
-				
 				for (node = purple_blist_get_root(); node != NULL; node = purple_blist_node_next(node, TRUE)) {
 					if (PURPLE_IS_BUDDY(node)) {
 						PurpleBuddy *buddy = PURPLE_BUDDY(node);
@@ -1984,11 +1987,18 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		gint64 last_message_timestamp;
 		JsonParser *post_parser = json_parser_new();
 		const gchar *post_str = json_object_get_string_member(data, "post");
-		
+
 		if (json_parser_load_from_data(post_parser, post_str, -1, NULL)) {
 			JsonObject *post = json_node_get_object(json_parser_get_root(post_parser));
 			const gchar *channel_id = json_object_get_string_member(post, "channel_id");
-			
+			const gchar *user_id =  mm_data_or_broadcast_string("user_id");
+					
+			//type system_join_channel			
+			if (!g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
+				mm_get_channel_by_id(ma, channel_id);
+				//TODO: open conversation window ?
+			}
+
 			last_message_timestamp = mm_process_room_message(ma, post, data);
 			
 			mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
@@ -2041,20 +2051,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		if (chatconv != NULL) {
 			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
 		} else if (purple_strequal(user_id, ma->self_user_id) && !g_hash_table_contains(ma->group_chats, channel_id)) {
-			const gchar *team_id = mm_data_or_broadcast_string("team_id");
-			PurpleChat *chat = NULL;
-			GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
-			
-			g_hash_table_insert(defaults, "team_id", g_strdup(team_id));
-			g_hash_table_insert(defaults, "id", g_strdup(channel_id));
-			
-			chat = purple_chat_new(ma->account, channel_id, defaults);
-			purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
-			
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "room_id", channel_id);
-			g_hash_table_replace(ma->group_chats, g_strdup(channel_id), NULL);
-			
-			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
+			mm_get_channel_by_id(ma, channel_id);
 		}
 		
 	} else if (purple_strequal(event, "user_removed")) {
@@ -2064,14 +2061,21 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 		if (chatconv != NULL) {
 			purple_chat_conversation_remove_user(chatconv, username, NULL);
-			
-			if (purple_strequal(user_id, ma->self_user_id)) {
-				purple_serv_got_chat_left(ma->pc, g_str_hash(channel_id));
-				g_hash_table_remove(ma->group_chats, channel_id);
-				purple_blist_remove_chat(purple_blist_find_chat(ma->account, channel_id));
-			}
 		}
-	} else if (purple_strequal(event, "preferences_changed")) {
+	
+		if (purple_strequal(user_id, ma->self_user_id)) {
+			if (g_hash_table_contains(ma->group_chats, channel_id)) {
+				const gchar *chat_name = g_hash_table_lookup(ma->group_chats, channel_id);
+				PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
+				if (chat) {
+					//TODO: remove conversation window ? 
+					g_hash_table_remove(ma->group_chats, channel_id);
+					g_hash_table_remove(ma->group_chats_rev, chat_name);
+					purple_blist_remove_chat(chat);
+				}
+			}
+		}			
+	} else if (purple_strequal(event, "preferences_changed") && purple_strequal(mm_data_or_broadcast_string("user_id"), ma->self_user_id)) {
 		//hack:  unnamed array of objects that json-glib parser sees as ... string 
 		GList *users = json_array_get_elements(json_named_array_from_string("dont-want-name", json_node_get_string(json_object_get_member(data, "preferences"))));
         GList *user = NULL;
@@ -2085,6 +2089,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 						const gchar *user_name = g_hash_table_lookup(ma->ids_to_usernames, id);
 						PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, user_name);
 						if (buddy) {
+							// don't remove conversation if any: direct channel is not destroyed so it is reuseable.
 							g_hash_table_remove(ma->ids_to_usernames, id);
 							g_hash_table_remove(ma->usernames_to_ids, user_name);
 							purple_blist_remove_buddy(buddy);
@@ -2102,6 +2107,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 						const gchar *chat_name = g_hash_table_lookup(ma->group_chats, id);
 						PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
 						if (chat) {
+							// don't remove conversation if any: group channel is not destroyed so it is reuseable.
 							g_hash_table_remove(ma->group_chats, id);
 							g_hash_table_remove(ma->group_chats_rev, chat_name);
 							purple_blist_remove_chat(chat);
@@ -2116,10 +2122,10 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		}
 		mm_get_users_by_ids(ma, mm_users);
 		g_list_free(users);
-	} else if (purple_strequal(event, "channel_created")) {
+	} else if (purple_strequal(event, "channel_created") && purple_strequal(mm_data_or_broadcast_string("user_id"), ma->self_user_id)) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		mm_get_channel_by_id(ma, channel_id);
-	} else if (purple_strequal(event, "channel_deleted")) {	
+	} else if (purple_strequal(event, "channel_deleted")) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		if (g_hash_table_contains(ma->group_chats, channel_id)) {
 			const gchar *channel_name = g_hash_table_lookup(ma->group_chats, channel_id);
@@ -2129,7 +2135,8 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 				g_hash_table_remove(ma->group_chats_rev, channel_name);
 				purple_blist_remove_chat(chat);
 			}
-		}	
+		}
+	// } else if (purple_strequal(event, "group_added") { //TODO: needed ? (preferences_changed -> group_channel_show handles it anyway ? 	
 	} else if (purple_strequal(event, "hello")) {
 		JsonObject *data_inside;
 		//JsonArray *user_ids;
