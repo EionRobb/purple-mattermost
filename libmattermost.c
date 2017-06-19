@@ -2008,8 +2008,7 @@ static void
 mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 
-#define _MAX_COLS_S "30"
-#define _MAX_COLS_I 33
+#define _MAX_COLS 33
 
 	MatterMostTeamRoomlist *mmtrl = user_data;
 	PurpleRoomlist *roomlist = mmtrl->roomlist;
@@ -2039,6 +2038,8 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		const gchar *purpose = json_object_get_string_member(channel, "purpose");
 		PurpleRoomlistRoom *room;
 		const gchar *type_str;
+		gchar *tmp_h = strlen(header) > _MAX_COLS ? g_strdup_printf("%.*s...", _MAX_COLS-3, header) : NULL;
+		gchar *tmp_p = strlen(purpose) > _MAX_COLS ? g_strdup_printf("%.*s...", _MAX_COLS-3, purpose) : NULL;
 		
 		switch(*room_type) {
 			case MATTERMOST_CHANNEL_OPEN: type_str = _("Open"); break;
@@ -2052,8 +2053,8 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		purple_roomlist_room_add_field(roomlist, room, id);
 		purple_roomlist_room_add_field(roomlist, room, name);
 		purple_roomlist_room_add_field(roomlist, room, type_str);
-		purple_roomlist_room_add_field(roomlist, room, strlen(header) > _MAX_COLS_I ? g_strdup_printf("%."_MAX_COLS_S"s...", header) : header);
-		purple_roomlist_room_add_field(roomlist, room, strlen(purpose) > _MAX_COLS_I ? g_strdup_printf("%."_MAX_COLS_S"s...", purpose) : purpose);
+		purple_roomlist_room_add_field(roomlist, room, tmp_h ? tmp_h : header);
+		purple_roomlist_room_add_field(roomlist, room, tmp_p ? tmp_p : purpose);
 
 		purple_roomlist_room_add(roomlist, room);
 		
@@ -2061,6 +2062,9 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 		
 		g_hash_table_replace(ma->channel_teams, g_strdup(id), g_strdup(team_id));
+
+		g_free(tmp_h);
+		g_free(tmp_p);	
 	}
 	
 	//Only after last team
@@ -2074,8 +2078,7 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	g_free(mmtrl->team_desc);
 	g_free(mmtrl);
 
-#undef _MAX_COLS_I
-#undef _MAX_COLS_S
+#undef _MAX_COLS
 }
 
 static gchar *
@@ -2156,7 +2159,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has already joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
-		mmtrl->team_desc = g_strdup(_("[joined channels]"));
+		mmtrl->team_desc = g_strdup(_("Joined channels"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/", team_id);
@@ -2169,7 +2172,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
-		mmtrl->team_desc = g_strdup(_("[more channels]"));
+		mmtrl->team_desc = g_strdup(_("More channels"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/more/0/9999", team_id);
