@@ -2001,11 +2001,16 @@ mm_get_or_create_default_group()
 typedef struct {
 	PurpleRoomlist *roomlist;
 	gchar *team_id;
+	gchar *team_desc;
 } MatterMostTeamRoomlist;
 
 static void
 mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
+
+#define _MAX_COLS_S "30"
+#define _MAX_COLS_I 33
+
 	MatterMostTeamRoomlist *mmtrl = user_data;
 	PurpleRoomlist *roomlist = mmtrl->roomlist;
 	JsonArray *channels = json_node_get_array(node);
@@ -2014,7 +2019,7 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	const gchar *team_id = mmtrl->team_id;
 	const gchar *team_name;
 	
-	team_name = g_hash_table_lookup(ma->teams, team_id);
+	team_name = g_strconcat(g_hash_table_lookup(ma->teams, team_id), " ", mmtrl->team_desc, NULL);
 	
 	team_category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, team_name, NULL);
 	purple_roomlist_room_add_field(roomlist, team_category, team_id);
@@ -2022,28 +2027,34 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			
 	for (i = 0; i < len; i++) {
 		JsonObject *channel = json_array_get_object_element(channels, i);
+		const gchar *room_type = json_object_get_string_member(channel, "type");
+
+		if (*room_type == MATTERMOST_CHANNEL_DIRECT) {
+			continue; // these are buddies - dont show empty 'rooms' in room list 
+		}
+
 		const gchar *id = json_object_get_string_member(channel, "id");
 		const gchar *name = json_object_get_string_member(channel, "display_name");
-		const gchar *room_type = json_object_get_string_member(channel, "type");
+		const gchar *header = json_object_get_string_member(channel, "header");
+		const gchar *purpose = json_object_get_string_member(channel, "purpose");
 		PurpleRoomlistRoom *room;
 		const gchar *type_str;
 		
+		switch(*room_type) {
+			case MATTERMOST_CHANNEL_OPEN: type_str = _("Open"); break;
+			case MATTERMOST_CHANNEL_PRIVATE: type_str = _("Private"); break;
+			case MATTERMOST_CHANNEL_GROUP: type_str = _("Group"); break;
+			default:  type_str = _("Unknown"); break;
+		}
+
 		room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, name, team_category);
 		
 		purple_roomlist_room_add_field(roomlist, room, id);
 		purple_roomlist_room_add_field(roomlist, room, name);
-		if (room_type == NULL) {
-			room_type = "";
-		}
-		switch(*room_type) {
-			case MATTERMOST_CHANNEL_OPEN: type_str = _("Open"); break;
-			case MATTERMOST_CHANNEL_PRIVATE: type_str = _("Private"); break;
-			case MATTERMOST_CHANNEL_DIRECT: type_str = _("Direct"); break;
-			case MATTERMOST_CHANNEL_GROUP: type_str = _("Group"); break;
-			default:  type_str = _("Unknown"); break;
-		}
 		purple_roomlist_room_add_field(roomlist, room, type_str);
-		
+		purple_roomlist_room_add_field(roomlist, room, strlen(header) > _MAX_COLS_I ? g_strdup_printf("%."_MAX_COLS_S"s...", header) : header);
+		purple_roomlist_room_add_field(roomlist, room, strlen(purpose) > _MAX_COLS_I ? g_strdup_printf("%."_MAX_COLS_S"s...", purpose) : purpose);
+
 		purple_roomlist_room_add(roomlist, room);
 		
 		g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
@@ -2060,7 +2071,11 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
 	g_free(mmtrl->team_id);
+	g_free(mmtrl->team_desc);
 	g_free(mmtrl);
+
+#undef _MAX_COLS_I
+#undef _MAX_COLS_S
 }
 
 static gchar *
@@ -2120,7 +2135,13 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Name"), "name", FALSE);
 	fields = g_list_append(fields, f);
 
-	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Type"), "t", FALSE);
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Type"), "type", FALSE);
+	fields = g_list_append(fields, f);
+
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Header"), "header", FALSE);
+	fields = g_list_append(fields, f);
+
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Purpose"), "purpose", FALSE);
 	fields = g_list_append(fields, f);
 
 	purple_roomlist_set_fields(roomlist, fields);
@@ -2135,6 +2156,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has already joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
+		mmtrl->team_desc = g_strdup(_("[joined channels]"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/", team_id);
@@ -2147,6 +2169,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
+		mmtrl->team_desc = g_strdup(_("[more channels]"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/more/0/9999", team_id);
@@ -3851,6 +3874,14 @@ mm_search_users(PurpleProtocolAction *action)
 
 }
 
+void
+mm_roomlist_show(PurpleProtocolAction *action)
+{
+	PurpleConnection *pc = purple_protocol_action_get_connection(action);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	purple_roomlist_show_with_account(ma->account);
+}
+
 static void
 mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -4204,6 +4235,9 @@ PurpleConnection *pc
 	PurpleProtocolAction *act;
 
 	act = purple_protocol_action_new(_("Search for friends..."), mm_search_users);
+	m = g_list_append(m, act);
+
+	act = purple_protocol_action_new(_("Room List"), mm_roomlist_show);
 	m = g_list_append(m, act);
 
 	return m;
