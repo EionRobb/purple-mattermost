@@ -1307,7 +1307,7 @@ static void
 mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response = json_node_get_object(node);
-
+	
 	if (json_object_get_int_member(response, "status_code") >= 400) {
 		// do not report error to UI: may be called from websocket callback
 		// TODO: improve	
@@ -1315,6 +1315,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	}
 
 	JsonObject *channel = json_object_get_object_member(response,"channel");
+	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 	const gchar *team_id = user_data;
 	const gchar *id = json_object_get_string_member(channel, "id");
     const gchar *name = json_object_get_string_member(channel, "display_name");
@@ -1339,6 +1340,12 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 
 		purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
+
+		if (autojoin) {
+			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", TRUE);
+			//TODO: open conversation window if called to do so (as in mm_add_channels_to_blist()) ?
+		}
+
 	}
 
 }
@@ -2014,7 +2021,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			//type system_join_channel			
 			if (!g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
 				mm_get_channel_by_id(ma, channel_id);
-				//TODO: open conversation window ?
+				//TODO: open conversation window (in mm_get_channel_by_id_response()) ?
 			}
 
 			last_message_timestamp = mm_process_room_message(ma, post, data);
