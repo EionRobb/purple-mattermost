@@ -1178,13 +1178,12 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 				g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
 				
 				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
-<<<<<<< HEAD
 		
 				if (room_type && *room_type == MATTERMOST_CHANNEL_GROUP) {
 					MattermostUser *mm_user = g_new0(MattermostUser,1);
 					mm_user->user_id=g_strdup(id);
 					ids = g_list_append(ids,mm_user);
-=======
+				}
 
 				if (autojoin) {
 					PurpleChatConversation *chatconv = NULL;
@@ -1199,7 +1198,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 					purple_conversation_present(PURPLE_CONVERSATION(chatconv));
 					mm_join_room(ma, g_strdup(team_id), g_strdup(id));
->>>>>>> master
 				}
 			}
 		}
