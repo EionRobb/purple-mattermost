@@ -1206,6 +1206,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	mm_get_users_by_ids(ma, ids);
 	//g_list_free(ids); in callback !
 	mm_clean_channels(ma, seen_ids);
+	//TODO: problem: get_users_by_ids() callback may finish after mm_clean_channels() 
+	//      'hidden' buddies (direct_channel_show = false) will NOT be removed from blist
 	g_list_free_full(seen_ids,g_free);	
 	g_free(team_id);
 }
