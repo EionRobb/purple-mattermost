@@ -179,6 +179,7 @@ json_array_to_string(JsonArray *array)
 #define purple_chat_conversation_add_user     purple_conv_chat_add_user
 #define purple_chat_conversation_add_users    purple_conv_chat_add_users
 #define purple_chat_conversation_remove_user  purple_conv_chat_remove_user
+#define purple_chat_conversation_has_user     purple_conv_chat_find_user
 #define purple_chat_conversation_get_topic    purple_conv_chat_get_topic
 #define purple_chat_conversation_set_topic    purple_conv_chat_set_topic
 #define PurpleChatUserFlags  PurpleConvChatBuddyFlags
@@ -3055,7 +3056,12 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 	JsonObject *obj = json_node_get_object(node);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
-	
+	gboolean found_myself = FALSE;
+
+	if (chatconv != NULL) {
+		found_myself = purple_chat_conversation_has_user(chatconv, ma->self_username);
+	}
+
 	if (!json_object_has_member(obj, "status_code")) {
 		GList *users = json_object_get_values(obj);
 		GList *i;
@@ -3067,7 +3073,11 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			const gchar *user_id = json_object_get_string_member(user, "id");
 			const gchar *username = json_object_get_string_member(user, "username");
 			const gchar *roles = json_object_get_string_member(user, "roles");
-			
+
+			if (purple_strequal(ma->self_username, username) && found_myself) {
+				continue;
+			}
+
 			if (!g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 				g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
 				g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
@@ -3272,26 +3282,34 @@ mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 }
 
 static void
-mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id)
+mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
+	//TODO: check if join succeeded 
 	gchar *url;
-	
-	if (team_id == NULL) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
-	
-	// Fetch offline history
-	// but first, get users in room (will fetch offline history after)
+	gchar *channel_id = user_data;
+	const gchar *team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
+
 	mm_get_users_of_room(ma, team_id, channel_id);
-	
+
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/", team_id, channel_id);
 	mm_fetch_url(ma, url, NULL, mm_got_room_info, g_strdup(channel_id));
 	g_free(url);
 }
 
 
-static void mm_join_chat(PurpleConnection *pc, GHashTable *chatdata);
+static void 
+mm_join_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id)
+{
+	gchar *url;
 
+	if (team_id == NULL) {
+		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
+	}
+
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/join", team_id, channel_id);
+	mm_fetch_url(ma, url, "{}", mm_join_room_response, g_strdup(channel_id));
+	g_free(url);
+}
 
 static void
 mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
