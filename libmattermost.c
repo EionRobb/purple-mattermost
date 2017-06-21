@@ -1357,7 +1357,7 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 {
 	gchar *url;
 
-	if (id == NULL) {
+	if (purple_strequal(id,"") || id == NULL) {
 		return;
 	}
 
@@ -2025,15 +2025,17 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			const gchar *channel_id = json_object_get_string_member(post, "channel_id");
 			const gchar *user_id =  mm_data_or_broadcast_string("user_id");
 					
-			//type system_join_channel			
-			if (channel_id && !g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
+			//type system_join_channel, channel_id is ""		
+			if (!purple_strequal(channel_id,"") && !g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
 				mm_get_channel_by_id(ma, channel_id);
 				//TODO: open conversation window (in mm_get_channel_by_id_response()) ?
 			}
 
-			last_message_timestamp = mm_process_room_message(ma, post, data);
+			if (!purple_strequal(channel_id,"")) {
+				last_message_timestamp = mm_process_room_message(ma, post, data);
 			
-			mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+				mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+			}
 		}
 		g_object_unref(post_parser);
 	} else if (purple_strequal(event, "typing")) {		
