@@ -1356,6 +1356,11 @@ static void
 mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 {
 	gchar *url;
+
+	if (id == NULL) {
+		return;
+	}
+
 	const gchar *team_id = mm_get_first_team_id(ma);
 
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/",team_id,id); 
@@ -2021,7 +2026,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			const gchar *user_id =  mm_data_or_broadcast_string("user_id");
 					
 			//type system_join_channel			
-			if (!g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
+			if (channel_id && !g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
 				mm_get_channel_by_id(ma, channel_id);
 				//TODO: open conversation window (in mm_get_channel_by_id_response()) ?
 			}
