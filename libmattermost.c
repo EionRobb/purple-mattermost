@@ -402,8 +402,26 @@ typedef struct {
 typedef struct {
 	gchar *user_id;
 	gchar *room_id;
-//	gchar *username;
+	gchar *username;
+	gchar *nickname;
+	gchar *first_name;
+	gchar *last_name;
+	gchar *email;	
 } MattermostUser;
+
+void
+mm_g_free_mattermost_user(gpointer a)
+{
+	MattermostUser *u = a;
+	g_free(u->user_id);
+	g_free(u->room_id);
+	g_free(u->username);
+	g_free(u->nickname);
+	g_free(u->first_name);
+	g_free(u->last_name);
+	g_free(u->email);
+	g_free(u);
+}
 
 typedef struct {
 	gchar *user_id;
@@ -1089,6 +1107,20 @@ mm_compare_channels_int(gconstpointer a, gconstpointer b)
 	return -1;
 }
 
+int
+mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostChannel *p1 = a;
+	const MattermostChannel *p2 = b;
+
+	gint res = g_strcmp0(p1->display_name,p2->display_name);
+	
+	if (res < 0) { return 1;}
+	if (res > 0) { return -1;}
+
+	return 0;
+}
+
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1149,7 +1181,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			tmpchannel->id = g_strdup(purple_blist_node_get_string(bnode, "room_id"));
 			foundchannel = g_list_find_custom(direct_channels, tmpchannel, mm_compare_channels_int);		
 			if (!foundchannel) {
-printf("REMOV: %s\n",tmpchannel->id);
 				removenodes = g_list_prepend(removenodes, bnode);
 			}	 	
 		}
@@ -1169,6 +1200,9 @@ printf("REMOV: %s\n",tmpchannel->id);
 	mm_list_user_prefs(ma, "group_channel_show", group_channels);
 
 	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
+
+
+	other_channels = g_list_sort(other_channels, mm_compare_channels_by_display_name_int);
 
 	for (j = other_channels; j != NULL; j=j->next) {
 		MattermostChannel *channel = j->data;
@@ -1392,6 +1426,19 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 
 static void mm_refresh_statuses(MattermostAccount *ma, const gchar *id);
 
+int mm_compare_users_by_username_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostUser *u1 = a;
+	const MattermostUser *u2 = b;
+
+	gint res = g_strcmp0(u1->username, u2->username);
+
+	if (res > 0) { return 1; }
+	if (res < 0) { return -1; }
+	return 0;
+}
+
+
 static void
 mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1404,40 +1451,45 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 	}
 
 	PurpleGroup *default_group = mm_get_or_create_default_group();
-	MattermostUser *mm_user;	
+	MattermostUser *mm_user;
+	GList *mm_users = user_data;	
 	GList *i = NULL;
-
-	for (i=user_data;i;i=i->next) {
+	
+	for (i=mm_users;i;i=i->next) {
 		mm_user = i->data;
 		JsonObject *user = json_object_get_object_member(response,mm_user->user_id);
 		if (user != NULL) {			
-			const gchar *username = json_object_get_string_member(user, "username");
-			if (username != NULL) {
-				PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
-				if (buddy == NULL) {          		
-					buddy = purple_buddy_new(ma->account, username, NULL);
-					purple_blist_add_buddy(buddy, NULL, default_group, NULL);
-				}
-				g_hash_table_replace(ma->ids_to_usernames, g_strdup(mm_user->user_id), g_strdup(username));
-				g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(mm_user->user_id));
-
-				_MM_BLIST_SET(buddy,user,"room_id",mm_user->room_id); 
-				_MM_BLIST_SET(buddy,user,"user_id",mm_user->user_id);
-				_MM_BLIST_SET(buddy,user,"nickname",NULL);
-				_MM_BLIST_SET(buddy,user,"first_name",NULL);
-				_MM_BLIST_SET(buddy,user,"last_name",NULL);
-				_MM_BLIST_SET(buddy,user,"email",NULL);
-
-				mm_get_avatar(ma,buddy);
-				mm_refresh_statuses(ma, mm_user->user_id);
-			}
-
-		g_free(mm_user->user_id);
-		g_free(mm_user->room_id);
-		g_free(mm_user);
+			mm_user->username = g_strdup(json_object_get_string_member(user, "username"));
+			mm_user->nickname = g_strdup(json_object_get_string_member(user, "nickname"));
+			mm_user->first_name = g_strdup(json_object_get_string_member(user, "first_name"));
+			mm_user->last_name = g_strdup(json_object_get_string_member(user, "last_name"));
+			mm_user->email = g_strdup(json_object_get_string_member(user, "email"));
 		}
 	}
-	g_list_free(user_data);
+
+	mm_users = g_list_sort(mm_users, mm_compare_users_by_username_int);
+
+	for (i=mm_users; i; i=i->next) {
+		MattermostUser *mm_user = i->data;
+		PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, mm_user->username);
+		if (buddy == NULL) {          		
+			buddy = purple_buddy_new(ma->account, mm_user->username, NULL);
+			purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+		}
+		g_hash_table_replace(ma->ids_to_usernames, g_strdup(mm_user->user_id), g_strdup(mm_user->username));
+		g_hash_table_replace(ma->usernames_to_ids, g_strdup(mm_user->username), g_strdup(mm_user->user_id));
+
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", mm_user->room_id);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", mm_user->user_id);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "first_name", mm_user->first_name);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "last_name", mm_user->last_name);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "nickname", mm_user->nickname);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "email", mm_user->email);
+
+		mm_get_avatar(ma,buddy);
+		mm_refresh_statuses(ma, mm_user->user_id);
+	}
+	g_list_free_full(user_data, mm_g_free_mattermost_user);
 }
 
 static void
@@ -1662,7 +1714,6 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 						if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT))) {
 							mm_remove_blist_by_id(ma, id);
 						} else if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
-printf ("TO REM: %s\n",id);
 							mm_remove_blist_by_id(ma, id);
 						}
 					} else if (purple_strequal(value, "true")) {
