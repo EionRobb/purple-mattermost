@@ -108,7 +108,17 @@ json_array_to_string(JsonArray *array)
 	return str;
 }
 
-// Mattermost uses unnamed arrays that json-glib parser turns into strings ...
+// Mattermost uses unnamed arrays that json-glib (1.0.2) 
+// does not parse correctly, example websocket message:
+ 
+// {"event":"preferences_changed","data":{"preferences":
+
+// "[{\"user_id\":\"XXXXXX\",\"category\":\"direct_channel_show\",
+// \"name\":\"YYYYYY\",\"value\":\"false\"}]"}, ...
+
+// above part is returned as json string, changing it to:
+// {"a-name":[{ ... }]} allows parser to work.
+
 JsonArray *
 json_named_array_from_string(const gchar *name, const gchar *str)
 {
@@ -1138,7 +1148,7 @@ mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b)
 	const MattermostChannel *p2 = b;
 
 	gint res = g_strcmp0(p1->display_name,p2->display_name);
-	
+
 	if (res < 0) { return 1;}
 	if (res > 0) { return -1;}
 
@@ -1176,25 +1186,6 @@ mm_get_alias(MattermostUser *mu)
 	
 	return alias;
 }
-
-/*
-static gint
-mm_server_error(MattermostAccount *ma, JsonNode *reply, const gchar *title, const gchar *msg, gboolean display)
-{
-	JsonObject *result = json_node_get_object(reply);
-	if (json_object_get_int_member(result, "status_code") >= 400) {
-		if (display)
-			if (msg) {
-				tmpmsg = g_strconcat("\n(", msg, ")", NULL);
-			}
-			purple_notify_error(ma->pc, _("Error"), title, g_strconcat(json_object_get_string_member(result, "message"), tmpmsg, NULL),  purple_request_cpar_from_connection(ma->pc));
-		}
-		return -1;
-	}
-	return 0;
-}
-*/
-
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
