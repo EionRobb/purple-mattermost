@@ -157,6 +157,9 @@ json_named_array_from_string(const gchar *name, const gchar *str)
 #define MATTERMOST_CHANNEL_GROUP 'G'
 #define MATTERMOST_CHANNEL_TYPE_STRING(t) (gchar[2]) { t, '\0' }
 
+// need some string which is unlikely in channel header/purpose
+#define MATTERMOST_CHAT_TOPIC_SEP "\n----- ---- --- -- -\n"
+
 #define MATTERMOST_DEFAULT_BLIST_GROUP_NAME  _("Mattermost")
 
 
@@ -1004,6 +1007,27 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 #endif
 
 	g_free(cookies);
+}
+
+const gchar *
+mm_split_topic_int(gchar *str)
+{
+	gchar *p = g_strstr_len(str, -1, MATTERMOST_CHAT_TOPIC_SEP);
+	if (p == NULL) return NULL;
+	*p = '\0';
+	return p + strlen(MATTERMOST_CHAT_TOPIC_SEP);
+}
+
+const gchar * 
+mm_make_topic(const gchar *header, const gchar *purpose, const gchar *old_topic)
+{
+	//TODO: limit len !
+	const gchar *old_purpose = mm_split_topic_int((gchar *)old_topic);
+	const gchar *old_header = old_topic;
+
+	const gchar *topic = g_strconcat((header && *header) ? header : old_header, MATTERMOST_CHAT_TOPIC_SEP, (purpose && *purpose) ? purpose : old_purpose, NULL);
+
+	return topic;	
 }
 
 static void
@@ -2056,12 +2080,13 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					chatconv = purple_conversations_find_chat_with_account(channel_id, ma->account);
 				}
 				
-				if (purple_strequal(msg_type, "system_header_change")) {
+				if (purple_strequal(msg_type, "system_header_change") || purple_strequal(msg_type, "system_purpose_change")) {
 					JsonObject *props = json_object_get_object_member(post, "props");
-					const gchar *new_topic = json_object_get_string_member(props, "new_header");
+					const gchar *new_header = json_object_get_string_member(props, "new_header");
+					const gchar *new_purpose = json_object_get_string_member(props, "new_purpose");
 					const gchar *new_topic_who = json_object_get_string_member(props, "username");
 					
-					purple_chat_conversation_set_topic(chatconv, new_topic_who, new_topic);
+					purple_chat_conversation_set_topic(chatconv, new_topic_who, mm_make_topic(new_header, new_purpose, purple_chat_conversation_get_topic(chatconv)));
 				}
 				
 				// Group chat message
@@ -3395,8 +3420,6 @@ mm_get_chat_name(GHashTable *data)
 	return g_strdup(temp);
 }
 
-
-
 static void 
 mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -3634,8 +3657,7 @@ mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		if (chatconv != NULL) {
 			const gchar *header = json_object_get_string_member(channel, "header");
 			const gchar *purpose = json_object_get_string_member(channel, "purpose");
-			const gchar *topic = g_strconcat ( header ? header : NULL, purpose ? g_strconcat("\n(", purpose, ")", NULL) : NULL, NULL);			
-			purple_chat_conversation_set_topic(chatconv, NULL, topic); 
+			purple_chat_conversation_set_topic(chatconv, NULL, mm_make_topic(header, purpose, purple_chat_conversation_get_topic(chatconv)));
 			//BUG: pidgin 2 does not resize conv window field
 			//should be called before purple_conversation_present();	
 		}
