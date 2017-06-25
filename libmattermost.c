@@ -1152,6 +1152,24 @@ mm_get_alias(MattermostUser *mu)
 	return alias;
 }
 
+/*
+static gint
+mm_server_error(MattermostAccount *ma, JsonNode *reply, const gchar *title, const gchar *msg, gboolean display)
+{
+	JsonObject *result = json_node_get_object(reply);
+	if (json_object_get_int_member(result, "status_code") >= 400) {
+		if (display)
+			if (msg) {
+				tmpmsg = g_strconcat("\n(", msg, ")", NULL);
+			}
+			purple_notify_error(ma->pc, _("Error"), title, g_strconcat(json_object_get_string_member(result, "message"), tmpmsg, NULL),  purple_request_cpar_from_connection(ma->pc));
+		}
+		return -1;
+	}
+	return 0;
+}
+*/
+
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -1170,7 +1188,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	for (i = 0; i < len; i++) {
 		MattermostChannel *mm_channel = g_new0(MattermostChannel,1);
 		JsonObject *channel = json_array_get_object_element(channels, i);
-//printf("JSON: %s\n", json_object_to_string(channel));
 		mm_channel->id = g_strdup(json_object_get_string_member(channel, "id"));
 		mm_channel->display_name = g_strdup(json_object_get_string_member(channel, "display_name"));
 		mm_channel->type = g_strdup(json_object_get_string_member(channel, "type"));
@@ -1277,7 +1294,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			mm_join_room(ma, g_strdup(channel->team_id), tmpch);
 		}
 		mm_get_history_of_room(ma, team_id, channel->id, ma->last_load_last_message_timestamp);
-							
+
 	}
 	g_list_free_full(other_channels,mm_g_free_mattermostchannel);
 }
@@ -1326,6 +1343,7 @@ static void
 mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
         JsonObject *user = json_node_get_object(node);
+		//TODO errors ?
         PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
 
         PurpleBuddy *buddy = user_data;
@@ -1381,7 +1399,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	JsonObject *response = json_node_get_object(node);
 
 	if (json_object_get_int_member(response, "status_code") >= 400) {
-		// do not report error to UI: may be called from websocket callback
+		// do not report error to UI ?: may be called from websocket callback
 		// TODO: improve
 		return;
 	}
@@ -1442,7 +1460,6 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 	mm_fetch_url(ma, url, NULL, mm_get_channel_by_id_response, g_strdup(team_id));
 	g_free(url);
 }
-
 
 #define _MM_BLIST_SET(b,u,p,s) \
 { \
@@ -1508,8 +1525,11 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 			buddy = purple_buddy_new(ma->account, mm_user->username, NULL);
 			purple_blist_add_buddy(buddy, NULL, default_group, NULL);
 		}
-		g_hash_table_replace(ma->ids_to_usernames, g_strdup(mm_user->user_id), g_strdup(mm_user->username));
-		g_hash_table_replace(ma->usernames_to_ids, g_strdup(mm_user->username), g_strdup(mm_user->user_id));
+
+		if (mm_user->user_id && mm_user->username) {
+			g_hash_table_replace(ma->ids_to_usernames, g_strdup(mm_user->user_id), g_strdup(mm_user->username));
+			g_hash_table_replace(ma->usernames_to_ids, g_strdup(mm_user->username), g_strdup(mm_user->user_id));
+		}
 
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "username", mm_user->username);
 		if (mm_user->room_id) { // room_id exists only if a direct channel has been created.
@@ -1694,8 +1714,6 @@ mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 		}
 		//TODO: leave imconversation ?
 	} else {
-//JAREK: FIXME
-//(g_hash_table_contains(ma->group_chats_rev, id)) { //FIXME: not in table at this time !
 		PurpleBlistNode *node;
 		gboolean found = FALSE;
 		for (node = purple_blist_get_root(); node != NULL && !found; node = purple_blist_node_next(node, TRUE)) {
@@ -1706,19 +1724,12 @@ mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 			}
 		}	
 
-		//const gchar *chat_name = g_hash_table_lookup(ma->group_chats_rev, id);
-		//PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
-		//PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc,g_str_hash(id));
-		if (found) {
-			//g_hash_table_remove(ma->group_chats, id);
-			//g_hash_table_remove(ma->group_chats_rev, chat_name);
+		if (found && PURPLE_IS_CHAT(node)) {
 			purple_blist_remove_chat(PURPLE_CHAT(node));
 			mm_chat_leave(ma->pc, g_str_hash(id));
 		}
-		//if (chatconv) {
 			//TODO: leave chatconversation ?
 			// 3.0 purple_chat_conversation_leave(chatconv);	
-		//}
 	}
 }
 
@@ -2028,9 +2039,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					PurpleChat *chat = purple_blist_find_chat(ma->account, channel_id);
 					
 					name = json_object_get_string_member(data, "channel_name"); // channel_display_name
-		
-printf("AA: %s\n", name);
-			
 					g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(name));
 					g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(channel_id));
 					
@@ -3402,6 +3410,11 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		found_myself = purple_chat_conversation_has_user(chatconv, ma->self_username);
 	}
 
+	if (json_object_get_int_member(obj, "status_code") >= 400) {
+		purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+		return;
+	}
+
 	if (!json_object_has_member(obj, "status_code")) {
 		GList *users = json_object_get_values(obj);
 		GList *i;
@@ -3481,6 +3494,12 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 {
 	gchar *channel_id = user_data;
 	JsonObject *obj = json_node_get_object(node);
+
+	if (json_object_get_int_member(obj, "status_code") >= 400) {
+		purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel history", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+		return;
+	}
+
 	JsonObject *posts = json_object_get_object_member(obj, "posts");
 	JsonArray *order = json_object_get_array_member(obj, "order");
 	gint64 last_message_timestamp = 0;
@@ -3892,6 +3911,16 @@ mm_send_typing(PurpleConnection *pc, const gchar *who, PurpleIMTypingState state
 	return mm_conv_send_typing(conv, state, NULL);
 }
 
+
+static void
+mm_conversation_send_message_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonObject *obj = json_node_get_object(node);
+	if (json_object_get_int_member(obj, "status_code") >= 400) {
+		purple_notify_error(ma->pc, "Error", "Error sending Message", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+	}
+}
+
 static gint
 mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, const gchar *message)
 {
@@ -3917,7 +3946,7 @@ mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const 
 	postdata = json_object_to_string(data);
 	
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/posts/create", team_id, channel_id);
-	mm_fetch_url(ma, url, postdata, NULL, NULL); //todo look at callback
+	mm_fetch_url(ma, url, postdata, mm_conversation_send_message_response, NULL); //todo look at callback
 	
 	g_free(postdata);
 	g_free(url);
@@ -3991,8 +4020,7 @@ mm_created_direct_message_send(MattermostAccount *ma, JsonNode *node, gpointer u
 	result = json_node_get_object(node);
 	
 	if (json_object_get_int_member(result, "status_code") >= 400) {
-		//TODO write error message to window
-		//json_object_get_string_member(result, "message")
+		purple_notify_error(ma->pc, "Error", "Error creating Mattermost Channel", json_object_get_string_member(result, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 	
@@ -4208,7 +4236,8 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 	
 	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_ADD, mm_search_results_add_buddy);
 	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_INFO, mm_search_results_get_info);
-	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_IM, mm_search_results_send_im);
+	//cannot send ims without having a direct channel created
+	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_IM, mm_search_results_send_im);
 	
 	for (i = users; i; i = i->next) {
 		JsonNode *usernode = i->data;
@@ -4294,7 +4323,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	const gchar *nickname;
 	const gchar *first_name;
 	const gchar *last_name;
-	const gchar *email;
+	//const gchar *email;
 	gchar *full_name;
 	
 	if (json_object_has_member(user, "status_code")) {
@@ -4309,7 +4338,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	username = json_object_get_string_member(user, "username");
 	first_name = json_object_get_string_member(user, "first_name");
 	last_name = json_object_get_string_member(user, "last_name");
-	email = json_object_get_string_member(user, "email");
+	//email = json_object_get_string_member(user, "email");
 	
 	g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
 	g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
@@ -4327,7 +4356,6 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		purple_serv_got_alias(ma->pc, username, full_name);
 	}
 	g_free(full_name);
-
 }
 
 static void
@@ -4417,22 +4445,24 @@ mm_create_direct_channel_response(MattermostAccount *ma, JsonNode *node, gpointe
 static void
 mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy) 
 {
-	gchar *url, *postdata, *user_id;
+	gchar *url, *postdata;
+	const gchar *user_id;
+	JsonObject *data;
+
 	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "room_id")) {
 		return;
 	}
-	JsonObject *data = json_object_new();
+
+	data = json_object_new();
 	user_id = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id");
-
 	json_object_set_string_member(data, "user_id", user_id);
-
 	postdata = json_object_to_string(data);
 
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", mm_get_first_team_id(ma));
 
 	mm_fetch_url(ma, url, postdata, mm_create_direct_channel_response, g_strdup(user_id));
 	
-	g_free(url);	
+	g_free(url);
 }
 
 static void
@@ -4677,7 +4707,7 @@ PurpleConnection *pc
 	GList *m = NULL;
 	PurpleProtocolAction *act;
 
-	act = purple_protocol_action_new(_("Search for friends..."), mm_search_users);
+	act = purple_protocol_action_new(_("Search for users..."), mm_search_users);
 	m = g_list_append(m, act);
 
 	act = purple_protocol_action_new(_("Room List"), mm_roomlist_show);
