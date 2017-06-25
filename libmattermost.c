@@ -1010,7 +1010,7 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const gchar *postdata, Mat
 }
 
 const gchar *
-mm_split_topic_int(gchar *str)
+mm_split_topic(gchar *str)
 {
 	gchar *p = g_strstr_len(str, -1, MATTERMOST_CHAT_TOPIC_SEP);
 	if (p == NULL) return NULL;
@@ -1022,7 +1022,7 @@ const gchar *
 mm_make_topic(const gchar *header, const gchar *purpose, const gchar *old_topic)
 {
 	//TODO: limit len !
-	const gchar *old_purpose = mm_split_topic_int((gchar *)old_topic);
+	const gchar *old_purpose = mm_split_topic((gchar *)old_topic);
 	const gchar *old_header = old_topic;
 
 	const gchar *topic = g_strconcat((header && *header) ? header : old_header, MATTERMOST_CHAT_TOPIC_SEP, (purpose && *purpose) ? purpose : old_purpose, NULL);
@@ -1165,10 +1165,11 @@ mm_get_alias(MattermostUser *mu)
 {
 	gchar *nickname = NULL;
 	gchar *full_name = NULL;
+	gchar *alias = NULL;
 
 	if (mu->nickname && *mu->nickname) { nickname = g_strconcat(" (",mu->nickname,")",NULL); }
 	full_name = g_strconcat(mu->first_name ? mu->first_name : "", (mu->first_name && *mu->first_name) ? " " : "", mu->last_name, nickname,  NULL);
-    const gchar *alias = g_strdup((full_name && *full_name) ? full_name : (mu->email && *mu->email) ? mu->email : NULL);
+    alias = g_strdup((full_name && *full_name) ? full_name : (mu->email && *mu->email) ? mu->email : NULL);
 
 	g_free(nickname);	
 	g_free(full_name);
@@ -1474,7 +1475,7 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 {
 	gchar *url;
 
-	if (purple_strequal(id,"") || id == NULL) {
+	if (id && *id) {
 		return;
 	}
 
@@ -1504,11 +1505,7 @@ int mm_compare_users_by_username_int(gconstpointer a, gconstpointer b)
 	const MattermostUser *u1 = a;
 	const MattermostUser *u2 = b;
 
-	gint res = g_strcmp0(u1->username, u2->username);
-
-	if (res > 0) { return 1; }
-	if (res < 0) { return -1; }
-	return 0;
+	return g_strcmp0(u1->username, u2->username);
 }
 
 
