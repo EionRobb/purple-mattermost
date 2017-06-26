@@ -63,6 +63,11 @@ else
     MATTERMOST_DEST = $(DESTDIR)`$(PKG_CONFIG) --variable=plugindir purple-3`
 	MATTERMOST_ICONS_DEST = $(DESTDIR)`$(PKG_CONFIG) --variable=datadir purple-3`/pixmaps/pidgin/protocols
   endif
+
+  ifeq ($(shell $(PKG_CONFIG) --exists glib-2.0 json-glib-1.0 2>/dev/null && echo "true"),)
+    MATTERMOST_TARGET = FAILNOLIBS
+  endif
+
 endif
 
 WIN32_CFLAGS = -I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include -I$(WIN32_DEV_TOP)/json-glib-0.14/include/json-glib-1.0 -I$(WIN32_DEV_TOP)/discount-2.2.1 -DENABLE_NLS -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"' -Wall -Wextra -Werror -Wno-deprecated-declarations -Wno-unused-parameter -fno-strict-aliasing -Wformat
@@ -78,7 +83,7 @@ PURPLE_C_FILES := libmattermost.c $(C_FILES)
 
 
 
-.PHONY:	all install FAILNOPURPLE clean install-icons installer
+.PHONY:	all install FAILNOPURPLE FAILNOLIBS clean install-icons installer
 
 all: $(MATTERMOST_TARGET)
 
@@ -118,7 +123,10 @@ rpm: clean
 	$(MAKERPM) -ta $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --define '_topdir $(RPMDIR)'
 
 FAILNOPURPLE:
-	echo "You need libpurple development headers installed to be able to compile this plugin"
+	@echo "Error: You need libpurple (2 or 3) development headers installed to be able to compile this plugin"
+
+FAILNOLIBS:
+	@echo "Error: You need GLib 2 and JSON-GLib development headers installed to be able to compile this plugin"
 
 clean:
 	rm -f $(MATTERMOST_TARGET) 
