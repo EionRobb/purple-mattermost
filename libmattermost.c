@@ -263,6 +263,7 @@ purple_chat_set_alias(PurpleChat *chat, const char *alias)
 
 #define purple_blist_find_buddy        purple_find_buddy
 #define purple_serv_got_alias                      serv_got_alias
+#define purple_buddy_set_server_alias  purple_blist_server_alias_buddy
 #define purple_account_set_private_alias    purple_account_set_alias
 #define purple_account_get_private_alias    purple_account_get_alias
 #define purple_protocol_got_user_status		purple_prpl_got_user_status
@@ -1541,7 +1542,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "email", mm_user->email);
 
 		gchar *alias = g_strdup(mm_get_alias(mm_user));
-		purple_blist_alias_buddy(buddy, alias);
+		purple_buddy_set_server_alias(buddy, alias);
 		g_free(alias);
 
 		mm_get_avatar(ma,buddy);
