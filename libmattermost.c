@@ -108,30 +108,14 @@ json_array_to_string(JsonArray *array)
 	return str;
 }
 
-// Mattermost uses unnamed arrays that json-glib (1.0.2) 
-// does not parse correctly, example websocket message:
- 
-// {"event":"preferences_changed","data":{"preferences":
-
-// "[{\"user_id\":\"XXXXXX\",\"category\":\"direct_channel_show\",
-// \"name\":\"YYYYYY\",\"value\":\"false\"}]"}, ...
-
-// above part is returned as json string, changing it to:
-// {"a-name":[{ ... }]} allows parser to work.
-
-JsonArray *
-json_named_array_from_string(const gchar *name, const gchar *str)
+static JsonArray *
+json_array_from_string(const gchar *str)
 {
-	JsonArray *array = NULL;
 	JsonParser *parser = json_parser_new();
-	gchar *data = g_strconcat("{\"", name , "\":", str, "}", NULL);
-
-	if (json_parser_load_from_data(parser, data, -1, NULL)) {
-		array = json_object_get_array_member(json_node_get_object(json_parser_get_root(parser)), name);
+	if (json_parser_load_from_data(parser, str, -1, NULL)) {
+		return json_node_get_array(json_parser_get_root(parser));
 	}
-
-	g_free(data);
-	return array;
+	return NULL;
 }
 
 #include <purple.h>
@@ -420,6 +404,7 @@ typedef struct {
 	gchar *first_name;
 	gchar *last_name;
 	gchar *email;	
+	gchar *alias;
 } MattermostUser;
 
 void
@@ -433,6 +418,7 @@ mm_g_free_mattermost_user(gpointer a)
 	g_free(u->first_name);
 	g_free(u->last_name);
 	g_free(u->email);
+	g_free(u->alias);
 	g_free(u);
 }
 
@@ -1491,12 +1477,12 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
 
 static void mm_refresh_statuses(MattermostAccount *ma, const gchar *id);
 
-int mm_compare_users_by_username_int(gconstpointer a, gconstpointer b)
+int mm_compare_users_by_alias_int(gconstpointer a, gconstpointer b)
 {
 	const MattermostUser *u1 = a;
 	const MattermostUser *u2 = b;
 
-	return g_strcmp0(u1->username, u2->username);
+	return g_strcmp0(u1->alias, u2->alias);
 }
 
 
@@ -1525,10 +1511,11 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 			mm_user->first_name = g_strdup(json_object_get_string_member(user, "first_name"));
 			mm_user->last_name = g_strdup(json_object_get_string_member(user, "last_name"));
 			mm_user->email = g_strdup(json_object_get_string_member(user, "email"));
+			mm_user->alias = g_strdup(mm_get_alias(mm_user));
 		}
 	}
 
-	mm_users = g_list_sort(mm_users, mm_compare_users_by_username_int);
+	mm_users = g_list_sort(mm_users, mm_compare_users_by_alias_int);
 
 	for (i=mm_users; i; i=i->next) {
 		MattermostUser *mm_user = i->data;
@@ -2288,8 +2275,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			}
 		}			
 	} else if (purple_strequal(event, "preferences_changed") && purple_strequal(mm_data_or_broadcast_string("user_id"), ma->self_user_id)) {
-		//hack:  unnamed array of objects that json-glib parser sees as ... string 
-		GList *users = json_array_get_elements(json_named_array_from_string("dont-want-name", json_node_get_string(json_object_get_member(data, "preferences"))));
+		GList *users = json_array_get_elements(json_array_from_string(json_node_get_string(json_object_get_member(data, "preferences"))));
         GList *user = NULL;
 		GList *mm_users = NULL;
 		for (user = users; user != NULL; user = user->next) {
@@ -3661,6 +3647,10 @@ mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gchar *url;
 	MattermostChannel *channel = user_data;
 	const gchar *team_id = g_hash_table_lookup(ma->channel_teams, channel->id);
+
+	if (team_id == NULL) {
+		team_id = mm_get_first_team_id(ma);
+	}
 
 	if (!purple_blist_find_chat(ma->account, channel->name)) {
 		mm_get_channel_by_id(ma, channel->id);
