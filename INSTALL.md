@@ -98,11 +98,17 @@ On the **Accounts** screen double-click on your Mattermost server to join.
 
 <img src="https://cloud.githubusercontent.com/assets/177788/25308357/0ebd9fe0-2767-11e7-8d20-f7d5567c5faf.png" width="600">
 
-Once you have joined, Pidgin's **Buddy List** should appear, and include a list of all public and private channels in Mattermost, including multi-person direct message channels. 
+Once you have joined, Pidgin's **Buddy List** should appear, and include a list of all subscribed open and private channels in Mattermost, including multi-person group message and direct message channels. 
 
 ![image](https://cloud.githubusercontent.com/assets/177788/25308409/6e46cda0-2768-11e7-99ec-fcfe3d435b6b.png)
 
 Right click and select **Join** to join the channel. 
+
+Use **Accounts > {Mattermost Account} > Room List** to add more chats and subscribe to more existing Mattermost open and private channels.
+
+Use **Accounts > {Mattermost Account} > Search for Users...** to add more buddies and subscribe to direct messages Mattermost channels.
+
+Note: Creating new public, private or group message channel is not implemented in the plugin yet: you will need to use Mattermost web or desktop client for this functionality for now.  
 
 <img src="https://cloud.githubusercontent.com/assets/177788/25313965/9a1cbe0e-27ee-11e7-9ce8-13031af4aff3.png" width="600">
 
