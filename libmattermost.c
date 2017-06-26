@@ -1103,7 +1103,7 @@ static void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
 static void mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy);
 
 static void mm_join_room(MattermostAccount *ma, const gchar *team_id, MattermostChannel *channel);
-
+static PurpleChatUserFlags mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist);
 
 
 void 
@@ -1354,30 +1354,73 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
         const gchar *first_name;
         const gchar *last_name;
         const gchar *email;
+		const gchar *username;
+		const gchar *user_id;
+		const gchar *roles;
+
+		MattermostUser *mm_user = g_new0(MattermostUser, 1);
 
         nickname = json_object_get_string_member(user, "nickname");
         if (nickname && *nickname) {
                 purple_notify_user_info_add_pair_plaintext(user_info,"Nickname", nickname);
+				mm_user->nickname = g_strdup(nickname);	
         }
 
         first_name = json_object_get_string_member(user, "first_name");
         if (first_name && *first_name) {
                 purple_notify_user_info_add_pair_plaintext(user_info,"First Name", first_name);
+				mm_user->first_name = g_strdup(first_name);
         }
 
         last_name = json_object_get_string_member(user, "last_name");
         if (last_name && *last_name) {
                 purple_notify_user_info_add_pair_plaintext(user_info,"Last Name", last_name);
+				mm_user->last_name = g_strdup(last_name);
         }
 
         email = json_object_get_string_member(user, "email");
         if (email && *email) {
                 purple_notify_user_info_add_pair_plaintext(user_info,"Email address", email);
+				mm_user->email = g_strdup(email);
         }
+
+		username = json_object_get_string_member(user, "username");
+		if (username && *username) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"Username", username);
+				mm_user->username = g_strdup(username);			
+		}
+
+		user_id = json_object_get_string_member(user, "id");
+		if (user_id && *user_id) {
+                purple_notify_user_info_add_pair_plaintext(user_info,"User ID", user_id);
+				mm_user->user_id = g_strdup(user_id);			
+		}
+
+		roles = json_object_get_string_member(user, "roles");
+		if (roles && *roles) {
+				if (mm_role_to_purple_flag(ma, roles) == (PURPLE_CHAT_USER_NONE|PURPLE_CHAT_USER_FOUNDER)) {
+					purple_notify_user_info_add_pair_plaintext(user_info,"Roles", "system administrator");
+				}	
+		}
 
         purple_notify_userinfo(ma->pc, purple_buddy_get_name(buddy), user_info, NULL, NULL);
 
         purple_notify_user_info_destroy(user_info);
+
+		PurpleBuddy *blistbuddy = purple_blist_find_buddy(ma->account, purple_buddy_get_name(buddy));
+
+		if (blistbuddy != NULL) {
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "first_name", mm_user->first_name);
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "last_name", mm_user->last_name);
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "nickname", mm_user->nickname);
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "email", mm_user->email);
+
+			gchar *alias = g_strdup(mm_get_alias(mm_user));
+			purple_buddy_set_server_alias(blistbuddy, alias);
+			g_free(alias);
+		}	
+
+		mm_g_free_mattermost_user(mm_user);
 }
 
 static void
@@ -1884,7 +1927,9 @@ mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
 			
 		} else if (purple_strequal(role, "channel_admin")) {
 			flags |= PURPLE_CHAT_USER_OP;
-		}
+		} else if (purple_strequal(role, "system_admin")) {
+			flags |= PURPLE_CHAT_USER_FOUNDER;
+		} 
 	}
 	
 	g_strfreev(roles);
@@ -2324,6 +2369,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 	} else if (purple_strequal(event, "channel_created") && purple_strequal(mm_data_or_broadcast_string("user_id"), ma->self_user_id)) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		mm_get_channel_by_id(ma, channel_id);
+		//TODO: add to blist chats
 	} else if (purple_strequal(event, "channel_deleted")) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		if (g_hash_table_contains(ma->group_chats, channel_id)) {
@@ -3437,8 +3483,14 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 					//Probably a direct message, add them to the buddy list
 					PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
 					if (buddy == NULL) {
-						buddy = purple_buddy_new(ma->account, username, json_object_get_string_member(user, "nickname"));
+						buddy = purple_buddy_new(ma->account, username, NULL);
 						purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+
+						PurpleIMConversation *imconv = purple_conversations_find_im_with_account(username, ma->account);
+						if (imconv == NULL) {
+							imconv = purple_im_conversation_new(ma->account, username);
+						}
+	
 						mm_add_buddy(ma->pc, buddy, NULL, NULL);
 					}
 					
@@ -3833,6 +3885,18 @@ mm_mark_conv_seen(PurpleConversation *conv, PurpleConversationUpdateType type)
 	if (room_id == NULL) {
 		if (PURPLE_IS_IM_CONVERSATION(conv)) {
 			room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
+			// new conversation: selecting IM in chat room people list on a non-buddy
+			if (room_id == NULL) {
+				// name of a new IM conv. == buddy username: better way to do it ?
+				const gchar *username = purple_conversation_get_name(conv);
+				PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
+				if (buddy == NULL) {
+					buddy = purple_buddy_new(ma->account, username, NULL);
+					purple_blist_add_buddy(buddy, NULL, mm_get_or_create_default_group(), NULL);
+					mm_add_buddy(pc, buddy, NULL, NULL);
+				}
+				return;
+			}
 		} else {
 			room_id = purple_conversation_get_name(conv);
 			if (g_hash_table_lookup(ma->group_chats_rev, room_id)) {
@@ -4237,8 +4301,7 @@ mm_got_add_buddy_search(MattermostAccount *ma, JsonNode *node, gpointer user_dat
 	
 	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_ADD, mm_search_results_add_buddy);
 	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_INFO, mm_search_results_get_info);
-	//cannot send ims without having a direct channel created
-	//purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_IM, mm_search_results_send_im);
+	purple_notify_searchresults_button_add(results, PURPLE_NOTIFY_BUTTON_IM, mm_search_results_send_im);
 	
 	for (i = users; i; i = i->next) {
 		JsonNode *usernode = i->data;
@@ -4328,6 +4391,10 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gchar *full_name;
 	
 	if (json_object_has_member(user, "status_code")) {
+		// may be called from mm_mark_conv_seen() after selecting in UI conv. 
+		// window: Conversation -> New instant message	
+		// without this we will loop with the error below
+		purple_conversation_destroy(purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM, purple_buddy_get_name(buddy), ma->account));
 		// bad user, delete
 		purple_blist_remove_buddy(buddy);
 		purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
