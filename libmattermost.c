@@ -3425,7 +3425,8 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			const gchar *username = json_object_get_string_member(user, "username");
 			const gchar *roles = json_object_get_string_member(user, "roles");
 
-			if (purple_strequal(ma->self_username, username) && found_myself) {
+			if (!found_myself && purple_strequal(ma->self_username, username)) {
+				found_myself = TRUE;
 				continue;
 			}
 
