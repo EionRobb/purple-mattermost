@@ -156,6 +156,8 @@ json_array_from_string(const gchar *str)
 
 #define MATTERMOST_DEFAULT_BLIST_GROUP_NAME  _("Mattermost")
 
+#define MATTERMOST_BOT_LABEL " [BOT]"
+
 
 // Purple2 compat functions
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
@@ -1984,8 +1986,25 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	const gchar *channel_type = json_object_get_string_member(data, "channel_type");
 	const gchar *pending_post_id = json_object_get_string_member(post, "pending_post_id");
 	const gchar *name = g_hash_table_lookup(ma->group_chats, channel_id);
+	JsonObject *props = json_object_get_object_member(post, "props");
+	const gchar *override_username = json_object_get_string_member(props, "override_username");
+	const gchar *from_webhook = json_object_get_string_member(props, "from_webhook");
 	gint64 update_at = json_object_get_int_member(post, "update_at");
 	gint64 timestamp = update_at / 1000;
+	gchar *use_username;
+
+	if (purple_strequal(from_webhook, "true") && override_username && *override_username) {
+		use_username = g_strconcat(override_username, MATTERMOST_BOT_LABEL, NULL);
+	} else {
+		use_username = g_strdup(username);
+	}
+
+	// ephemeral messages have update_at:0
+	if (!timestamp) {
+		gint64 create_at =  json_object_get_int_member(post, "create_at");
+		timestamp = create_at / 1000;
+		update_at = create_at;
+	}
 	PurpleMessageFlags msg_flags = (purple_strequal(user_id, ma->self_user_id) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
 	
 	if (username != NULL && !g_hash_table_contains(ma->ids_to_usernames, user_id)) {
@@ -2027,7 +2046,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				for (i = 0; i < len; i++) {
 					const gchar *file_id = json_array_get_string_element(file_ids, i);
 					
-					mm_fetch_file_link_for_channel(ma, file_id, channel_id, username, timestamp);
+					mm_fetch_file_link_for_channel(ma, file_id, channel_id, use_username, timestamp);
 				}
 			}
 			
@@ -2057,7 +2076,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				}
 				
 				if (purple_strequal(msg_type, "system_header_change") || purple_strequal(msg_type, "system_purpose_change")) {
-					JsonObject *props = json_object_get_object_member(post, "props");
 					const gchar *new_header = json_object_get_string_member(props, "new_header");
 					const gchar *new_purpose = json_object_get_string_member(props, "new_purpose");
 					const gchar *new_topic_who = json_object_get_string_member(props, "username");
@@ -2066,7 +2084,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				}
 				
 				// Group chat message
-				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), username, msg_flags, message, timestamp);
+				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, message, timestamp);
 				
 				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
 					mm_mark_room_messages_read(ma, channel_id);
@@ -2074,7 +2092,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				
 			} else {
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
-					purple_serv_got_im(ma->pc, username, message, msg_flags, timestamp);
+					purple_serv_got_im(ma->pc, use_username, message, msg_flags, timestamp);
 					
 					if (channel_type && *channel_type == MATTERMOST_CHANNEL_DIRECT && !g_hash_table_contains(ma->one_to_ones, channel_id)) {
 						g_hash_table_replace(ma->one_to_ones, g_strdup(channel_id), g_strdup(username));
@@ -2105,6 +2123,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		
 	}
 	
+	g_free(use_username);
 	return update_at;
 }
 
