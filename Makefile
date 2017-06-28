@@ -11,11 +11,11 @@ PKG_CONFIG ?= pkg-config
 MAKENSIS ?= makensis
 MAKERPM ?= rpmbuild
 RPMDIR ?= $(shell pwd)/rpmdir
+RPMSPEC = purple-mattermost.spec
 
-REVISION_ID = $(shell hg id -i)
-REVISION_NUMBER = $(shell hg id -n)
-ifneq ($(REVISION_ID),)
-PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d).git.r$(REVISION_NUMBER).$(REVISION_ID)
+COMMIT_ID = $(shell git log -1 --pretty=format:"%h")
+ifneq ($(COMMIT_ID),)
+PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
 else
 PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d)
 endif
@@ -63,6 +63,11 @@ else
     MATTERMOST_DEST = $(DESTDIR)`$(PKG_CONFIG) --variable=plugindir purple-3`
 	MATTERMOST_ICONS_DEST = $(DESTDIR)`$(PKG_CONFIG) --variable=datadir purple-3`/pixmaps/pidgin/protocols
   endif
+
+  ifeq ($(shell $(PKG_CONFIG) --exists glib-2.0 json-glib-1.0 2>/dev/null && echo "true"),)
+    MATTERMOST_TARGET = FAILNOLIBS
+  endif
+
 endif
 
 WIN32_CFLAGS = -I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include -I$(WIN32_DEV_TOP)/json-glib-0.14/include/json-glib-1.0 -I$(WIN32_DEV_TOP)/discount-2.2.1 -DENABLE_NLS -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"' -Wall -Wextra -Werror -Wno-deprecated-declarations -Wno-unused-parameter -fno-strict-aliasing -Wformat
@@ -78,7 +83,7 @@ PURPLE_C_FILES := libmattermost.c $(C_FILES)
 
 
 
-.PHONY:	all install FAILNOPURPLE clean install-icons installer
+.PHONY:	all install FAILNOPURPLE FAILNOLIBS clean install-icons installer
 
 all: $(MATTERMOST_TARGET)
 
@@ -110,16 +115,22 @@ installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22
 	$(MAKENSIS) purple-mattermost.nsi
 
 	
-rpm:    
+rpm: clean 
 	mkdir -p $(RPMDIR)/{BUILD,RPMS,SRPMS,SOURCES,SPECS}
-	tar -czf $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude-vcs --transform 's|^\.|purple-mattermost-$(PLUGIN_VERSION)|' .	
-	$(MAKERPM) -ta $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --define 'plugin_version $(PLUGIN_VERSION)' --define '_topdir $(RPMDIR)'
+	cp $(RPMSPEC).in $(RPMSPEC)
+	sed -i 's|@PLUGIN_VERSION@|$(PLUGIN_VERSION)|' $(RPMSPEC)
+	tar -czf $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude-vcs --transform 's|^\.|purple-mattermost-$(PLUGIN_VERSION)|' --exclude purple-mattermost-$(PLUGIN_VERSION).tar.gz .	
+	$(MAKERPM) -ta $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --define '_topdir $(RPMDIR)'
 
 FAILNOPURPLE:
-	echo "You need libpurple development headers installed to be able to compile this plugin"
+	@echo "Error: You need libpurple (2 or 3) development headers installed to be able to compile this plugin"
+
+FAILNOLIBS:
+	@echo "Error: You need GLib 2 and JSON-GLib development headers installed to be able to compile this plugin"
 
 clean:
 	rm -f $(MATTERMOST_TARGET) 
 	rm -rf $(RPMDIR)
+	rm -f $(RPMSPEC)
 
 

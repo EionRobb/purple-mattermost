@@ -1,4 +1,4 @@
-%{!?plugin_version: %define plugin_version 1.1}
+%{!?plugin_version: %define plugin_version @PLUGIN_VERSION@}
 
 Name:           purple-mattermost
 Version:        %{plugin_version}
@@ -15,8 +15,7 @@ Source0:        https://github.com/EionRobb/purple-mattermost/archive/v%{version
 # package version as available on RHEL7/EPEL7
 BuildRequires:  json-glib-devel >= 1.0.2
 BuildRequires:  libmarkdown-devel >= 2.1.8
-BuildRequires:  libpurple-devel >= 2.8.0
-BuildRequires:  mercurial >= 2.6.2
+BuildRequires:  libpurple-devel >= 2.10.7
 
 %description
 A third-party plugin for the Pidgin multi-protocol instant messenger.
@@ -53,7 +52,8 @@ rm -rf %{buildroot}
 
 %files 
 %defattr(-,root,root,-)
-%doc INSTALL.md LICENSE README.md VERIFICATION.md
+%license LICENSE
+%doc INSTALL.md README.md VERIFICATION.md
 %{_libdir}/purple-*/libmattermost.so
 
 %files -n pidgin-mattermost 
