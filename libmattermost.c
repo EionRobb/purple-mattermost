@@ -430,6 +430,53 @@ typedef struct {
 	gchar *value;
 } MattermostUserPref;
 
+typedef struct {
+	gchar *channel_id;
+	gchar *file_id;
+	gchar *sender;
+	gint64 timestamp;
+} MattermostChannelLink;
+
+void
+mm_g_free_mattermost_channel_link(gpointer a)
+{
+	MattermostChannelLink *l = a;
+	g_free(l->channel_id);
+	g_free(l->file_id);
+	g_free(l->sender);
+	g_free(l);
+}
+
+typedef struct {
+//	gchar *id;
+//	gchar *user_id;
+//	gchar *post_id;
+	gchar *name;
+//	gchar *extension;
+//	gint64 size;
+//	gchar *mime_type;
+//	gint width;
+//	gint height;
+//	gboolean has_preview_image;
+	gchar *uri;
+	MattermostChannelLink *mmchlink;
+} MattermostFile;
+
+void
+mm_g_free_mattermost_file(gpointer a)
+{
+	MattermostFile *f = a;
+//	g_free(f->id);
+//	g_free(f->user_id);
+//	g_free(f->post_id);
+	g_free(f->name);
+//	g_free(f->extension);
+//	g_free(f->mime_type);
+//	g_free(f->uri);
+	mm_g_free_mattermost_channel_link(f->mmchlink);
+	g_free(f);
+}
+
 //#include <mkdio.h>
 extern char markdown_version[];
 int mkd_line(char *, int, char **, int);
@@ -1892,44 +1939,62 @@ mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
 	return flags;
 }
 
-typedef struct {
-	gchar *channel_id;
-	gchar *file_id;
-	gchar *sender;
-	gint64 timestamp;
-} MattermostChannelLink;
-
 static void
-mm_got_link_for_channel(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	const gchar *url = json_node_get_string(node);
-	MattermostChannelLink *info = user_data;
-	PurpleMessageFlags msg_flags = (purple_strequal(info->sender, ma->self_username) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
+
+	JsonObject *response = json_node_get_object(node);
+	MattermostFile *mmfile = user_data;
+	gchar *anchor;
+
+	if (json_object_get_int_member(response, "status_code") >= 400) {
+		anchor = g_strdup(mmfile->uri);
+	} else {
+		mmfile->name = g_strdup(json_object_get_string_member(response, "name"));
+		anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL); 		
+	}
+
+	PurpleMessageFlags msg_flags = (purple_strequal(mmfile->mmchlink->sender, ma->self_username) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
 	
-	if (g_hash_table_contains(ma->group_chats, info->channel_id)) {
-		purple_serv_got_chat_in(ma->pc, g_str_hash(info->channel_id), info->sender, msg_flags, url, info->timestamp);
+	if (g_hash_table_contains(ma->group_chats, mmfile->mmchlink->channel_id)) {
+		purple_serv_got_chat_in(ma->pc, g_str_hash(mmfile->mmchlink->channel_id), mmfile->mmchlink->sender, msg_flags, anchor, mmfile->mmchlink->timestamp);
 	} else {
 		if (msg_flags == PURPLE_MESSAGE_RECV) {
-			purple_serv_got_im(ma->pc, info->sender, url, msg_flags, info->timestamp);
+			purple_serv_got_im(ma->pc, mmfile->mmchlink->sender, anchor, msg_flags, mmfile->mmchlink->timestamp);
 		} else {
-			const gchar *other_user = g_hash_table_lookup(ma->one_to_ones, info->channel_id);
+			const gchar *other_user = g_hash_table_lookup(ma->one_to_ones, mmfile->mmchlink->channel_id);
 			// TODO null check
 			PurpleIMConversation *imconv = purple_conversations_find_im_with_account(other_user, ma->account);
-			PurpleMessage *pmsg = purple_message_new_outgoing(other_user, url, msg_flags);
+			PurpleMessage *pmsg = purple_message_new_outgoing(other_user, anchor, msg_flags);
 			
 			if (imconv == NULL) {
 				imconv = purple_im_conversation_new(ma->account, other_user);
 			}
-			purple_message_set_time(pmsg, info->timestamp);
+			purple_message_set_time(pmsg, mmfile->mmchlink->timestamp);
 			purple_conversation_write_message(PURPLE_CONVERSATION(imconv), pmsg);
 			purple_message_destroy(pmsg);
 		}
 	}
 	
-	g_free(info->channel_id);
-	g_free(info->file_id);
-	g_free(info->sender);
-	g_free(info);
+	mm_g_free_mattermost_file(mmfile);
+	g_free(anchor);
+}
+
+
+static void
+mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	MattermostChannelLink *mmchlink = user_data;
+	MattermostFile *mmfile = g_new0(MattermostFile,1);
+	mmfile->uri = g_strdup(json_node_get_string(node));
+	mmfile->mmchlink = mmchlink;
+
+	gchar *url;
+
+	url = mm_build_url(ma, "/api/v3/files/%s/get_info", mmfile->mmchlink->file_id);
+	mm_fetch_url(ma, url, NULL, mm_file_metadata_response, mmfile);
+
+	g_free(url);
 }
 
 static void
@@ -1945,7 +2010,7 @@ mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, cons
 	
 	url = mm_build_url(ma, "/api/v3/files/%s/get_public_link", file_id);
 	
-	mm_fetch_url(ma, url, NULL, mm_got_link_for_channel, info);
+	mm_fetch_url(ma, url, NULL, mm_fetch_file_metadata, info);
 	
 	g_free(url);
 }
