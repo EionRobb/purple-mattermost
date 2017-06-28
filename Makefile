@@ -119,7 +119,7 @@ rpm: clean
 	mkdir -p $(RPMDIR)/{BUILD,RPMS,SRPMS,SOURCES,SPECS}
 	cp $(RPMSPEC).in $(RPMSPEC)
 	sed -i 's|@PLUGIN_VERSION@|$(PLUGIN_VERSION)|' $(RPMSPEC)
-	tar -czf $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude-vcs --transform 's|^\.|purple-mattermost-$(PLUGIN_VERSION)|' --exclude purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude $(RPMSPEC).in .	
+	tar -czf $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --exclude-vcs --transform 's|^\.|purple-mattermost-$(PLUGIN_VERSION)|' --exclude purple-mattermost-$(PLUGIN_VERSION).tar.gz .	
 	$(MAKERPM) -ta $(RPMDIR)/SOURCES/purple-mattermost-$(PLUGIN_VERSION).tar.gz --define '_topdir $(RPMDIR)'
 
 FAILNOPURPLE:
