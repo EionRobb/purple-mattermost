@@ -1328,9 +1328,9 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		JsonObject *team = json_node_get_object(member);
 		
 		const gchar *team_id = json_object_get_string_member(team, "id");
-		const gchar *display_name = json_object_get_string_member(team, "display_name");
+		const gchar *name = json_object_get_string_member(team, "name");
 		
-		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(display_name));
+		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(name));
 		
 		mm_get_open_channels_for_team(ma, team_id);
 	}
@@ -1388,6 +1388,20 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
         MattermostAccount *ma = purple_connection_get_protocol_data(pc);
         PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
         gchar *url;
+
+		// hope no user account/alias ends in [BOT] ... 
+		if (purple_str_has_suffix(username, MATTERMOST_BOT_LABEL)) {
+			PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
+			purple_notify_user_info_add_pair_plaintext(user_info,_("BOT Name"), purple_strreplace(username, MATTERMOST_BOT_LABEL, ""));
+			gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "https://" : "http://", ma->server, "/", g_hash_table_lookup(ma->teams, mm_get_first_team_id(ma)), "/integrations/", NULL);
+			purple_notify_user_info_add_pair_plaintext(user_info,_("Information"), info);
+			purple_notify_user_info_add_section_break(user_info);
+			purple_notify_user_info_add_pair_plaintext(user_info, NULL, "Mattermost webhook integration");
+			purple_notify_userinfo(ma->pc, username, user_info, NULL, NULL);
+			purple_notify_user_info_destroy(user_info);
+			g_free(info);
+			return;
+		}
 
         if (buddy == NULL) {
                 buddy = purple_buddy_new(ma->account, username, NULL);
@@ -4077,6 +4091,13 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 	const gchar *team_id = mm_get_first_team_id(ma);
 	
 	if (room_id == NULL) {
+
+		if (purple_str_has_suffix(who, MATTERMOST_BOT_LABEL)) {
+			purple_notify_error(ma->pc, "Error", "You cannot send instant message to a BOT", "(However you may be able to interact with it using \"/cmd command\" in a chat)", purple_request_cpar_from_connection(ma->pc));
+			//TODO: remove conversation (segfaults in libpurple 2 if called here) 
+			return 0;
+		}
+
 		JsonObject *data;
 		gchar *url, *postdata;
 		const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, who);
