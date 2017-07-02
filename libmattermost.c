@@ -3490,7 +3490,8 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			const gchar *username = json_object_get_string_member(user, "username");
 			const gchar *roles = json_object_get_string_member(user, "roles");
 
-			if (purple_strequal(ma->self_username, username) && found_myself) {
+			if (!found_myself && purple_strequal(ma->self_username, username)) {
+				found_myself = TRUE;
 				continue;
 			}
 
@@ -4158,8 +4159,9 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 }
 
 
+
 static void
-mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
+mm_chat_set_header_purpose(PurpleConnection *pc, int id, const char *topic, const gboolean isheader)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	PurpleChatConversation *chatconv;
@@ -4188,11 +4190,16 @@ mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
 	
 	data = json_object_new();
 	json_object_set_string_member(data, "channel_id", channel_id);
-	json_object_set_string_member(data, "channel_header", topic);
-	
+
+	if (isheader) {
+		json_object_set_string_member(data, "channel_header", topic);
+		url = mm_build_url(ma, "/api/v3/teams/%s/channels/update_header", team_id);
+	} else {
+		json_object_set_string_member(data, "channel_purpose", topic);
+		url = mm_build_url(ma, "/api/v3/teams/%s/channels/update_purpose", team_id);
+	}
+
 	postdata = json_object_to_string(data);
-	
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/update_header", team_id);
 	
 	mm_fetch_url(ma, url, postdata, NULL, NULL);
 	
@@ -4200,7 +4207,11 @@ mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
 	g_free(url);
 }
 
-
+static void
+mm_chat_set_topic(PurpleConnection *pc, int id, const char *topic)
+{
+	mm_chat_set_header_purpose(pc, id, topic, TRUE);
+}
 
 void
 mm_search_results_send_im(PurpleConnection *pc, GList *row, void *user_data)
@@ -4660,7 +4671,7 @@ mm_cmd_topic(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 	PurpleConnection *pc = NULL;
 	int id = -1;
 	PurpleChatConversation *chatconv = NULL;
-	
+
 	pc = purple_conversation_get_connection(conv);
 	chatconv = PURPLE_CHAT_CONVERSATION(conv);
 	id = purple_chat_conversation_get_id(chatconv);
@@ -4689,10 +4700,16 @@ mm_cmd_topic(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 		return PURPLE_CMD_RET_OK;
 	}
 	
-	mm_chat_set_topic(pc, id, args ? args[0] : NULL);
+	if (purple_strequal(cmd,"purpose")) {
+		mm_chat_set_header_purpose(pc, id, args ? args[0] : NULL, FALSE);
+	} else {
+		mm_chat_set_header_purpose(pc, id, args ? args[0] : NULL, TRUE);
+	}
 	
 	return PURPLE_CMD_RET_OK;
 }
+
+
 
 static PurpleCmdRet
 mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer userdata)
@@ -4820,6 +4837,16 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
 						_("topic <description>:  Set the channel topic description"), NULL);
+
+	purple_cmd_register("header", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
+						_("header <description>:  Set the channel header description"), NULL);
+
+	purple_cmd_register("purpose", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
+						_("purpose <description>:  Set the channel purpose description"), NULL);
 	
 	purple_cmd_register("echo", "sw", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
