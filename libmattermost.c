@@ -1595,9 +1595,11 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "nickname", mm_user->nickname);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "email", mm_user->email);
 
-		gchar *alias = g_strdup(mm_get_alias(mm_user));
-		purple_buddy_set_server_alias(buddy, alias);
-		g_free(alias);
+		if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
+			gchar *alias = g_strdup(mm_get_alias(mm_user));
+			purple_buddy_set_server_alias(buddy, alias);
+			g_free(alias);
+		}
 
 		mm_get_avatar(ma,buddy);
 		mm_refresh_statuses(ma, mm_user->user_id);
@@ -4289,6 +4291,7 @@ void
 mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
 {
 	PurpleAccount *account = purple_connection_get_account(pc);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	gchar *alias;
 	
 	MattermostUser *user=g_new0(MattermostUser,1);
@@ -4298,7 +4301,11 @@ mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
 	user->nickname = g_strdup(g_list_nth_data(row, 3));
 	user->email = g_strdup(g_list_nth_data(row, 4));
 
-	alias = g_strdup(mm_get_alias(user));
+	if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
+		alias = g_strdup(mm_get_alias(user));
+	} else {
+		alias = NULL;
+	}
 
 	if (!purple_blist_find_buddy(account, user->username)) {
 		purple_blist_request_add_buddy(account, user->username, MATTERMOST_DEFAULT_BLIST_GROUP_NAME, alias); //NO room_id
@@ -4695,6 +4702,9 @@ mm_add_account_options(GList *account_options)
 	account_options = g_list_append(account_options, option);
 
 	option = purple_account_option_bool_new(N_("Auto-Join new chats"), "use-autojoin", FALSE);
+	account_options = g_list_append(account_options, option);
+
+	option = purple_account_option_bool_new(N_("Auto set buddies aliases"), "use-alias", FALSE);
 	account_options = g_list_append(account_options, option);
 	
 	return account_options;
