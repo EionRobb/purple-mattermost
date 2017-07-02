@@ -1415,9 +1415,12 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "nickname", mm_user->nickname);
 			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "email", mm_user->email);
 
+			// prepare to match PR51 change
+			// if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
 			gchar *alias = g_strdup(mm_get_alias(mm_user));
 			purple_buddy_set_server_alias(blistbuddy, alias);
 			g_free(alias);
+			//}
 		}	
 
 		mm_g_free_mattermost_user(mm_user);
