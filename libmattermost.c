@@ -2295,6 +2295,117 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 	mm_socket_write_json(ma, obj);
 }
 
+
+static gchar *
+mm_process_attachment(JsonObject *attachment)
+{
+#define MM_ATTCH_LI "<hr>"
+#define MM_ATTCH_BR "<br>"
+#define MM_ATTCH_BD_CH "||"
+#define MM_ATTCH_BD(c) "<font color=\"", color, "\">", MM_ATTCH_BD_CH, "</font>"
+#define MM_ATTCH_TI(t)   "<font size=\"6\">",t,"</font>" 
+#define MM_ATTCH_TL(l,t) "<a href=\"", l, "\">", MM_ATTCH_TI(t), "</a>"
+#define MM_ATTCH_AU(a) "<font size=\"4\">", a, "</font>" 
+#define MM_ATTCH_AL(l,a)  "<a href=\"", l, "\">", MM_ATTCH_AU(a), "</a>" 
+#define MM_ATTCH_AI(i) "<a href=\"", i, "\">[icon]</a>"
+#define MM_ATTCH_FT(t) "<font size=\"4\">", t, "</font>"
+#define MM_ATTCH_IU(i) "<a href=\"", i, "\">", i, "</a>"
+
+typedef struct {
+	gchar *title;
+	gchar *value;
+	// short
+} MattermostAttachmentField;
+
+void mm_g_free_mattermost_attachment_field(gpointer f) 
+{
+	MattermostAttachmentField *af = f;
+	if (!af) return;
+	g_free(af->title);
+	g_free(af->value);
+	g_free(af);
+}
+
+
+	gchar *msg_top = NULL;
+	gchar *msg_fields = NULL;
+	gchar *msg_bottom = NULL;
+	gchar *msg_border = NULL;
+	gchar *message = NULL;
+
+	//fallback
+	const gchar *color = json_object_get_string_member(attachment, "color");
+	const gchar *pretext = json_object_get_string_member(attachment, "pretext");
+	const gchar *text = json_object_get_string_member(attachment, "text");
+	const gchar *author_name = json_object_get_string_member(attachment, "author_name");
+	const gchar *author_icon = json_object_get_string_member(attachment, "author_icon");
+	const gchar *author_link = json_object_get_string_member(attachment,"author_link");
+	const gchar *title = json_object_get_string_member(attachment, "title");
+	const gchar *title_link = json_object_get_string_member(attachment, "title_link");
+	const gchar *image_url = json_object_get_string_member(attachment, "image_url");
+
+	JsonArray *fields = json_object_get_array_member(attachment, "fields");
+	guint fields_len = json_array_get_length(fields);
+
+	GList *flds_list = NULL;
+	gint i;
+
+	for (i = 0; i < fields_len; i++) {
+		MattermostAttachmentField *fld_cont = g_new0(MattermostAttachmentField, 1); 
+		JsonObject *field = json_array_get_object_element(fields, i);
+	
+		fld_cont->title = g_strdup(json_object_get_string_member(field, "title"));
+		fld_cont->value = g_strdup(json_object_get_string_member(field, "value"));
+
+		flds_list = g_list_append(flds_list, fld_cont);
+	}
+
+	//TODO: symbolic color names ?
+	if (color) {
+		msg_border = g_strconcat(MM_ATTCH_BD(color), NULL);
+	} else {
+		msg_border = g_strconcat(MM_ATTCH_BD("#FFFFFF"), NULL);
+	}
+
+	msg_top = g_strconcat(
+		pretext ? pretext : " ", MM_ATTCH_BR, 					//pretext line 
+		MM_ATTCH_LI, MM_ATTCH_BR,								//top line
+		msg_border, MM_ATTCH_AL(author_name,author_link), 
+					MM_ATTCH_AI(author_icon), MM_ATTCH_BR,		// author icon 
+		msg_border, MM_ATTCH_TL(title,title_link), MM_ATTCH_BR,	// title line
+		msg_border, text ? text: " ", MM_ATTCH_BR,				// text line 
+		msg_border, MM_ATTCH_IU(image_url), MM_ATTCH_BR,		// image line
+		NULL);
+	
+	GList *j;
+	gchar *tmpl1 = NULL;
+	gchar *tmpl2 = NULL;
+
+	for (j=flds_list; j != NULL; j=j->next) {
+		MattermostAttachmentField *af = j->data;
+		tmpl1 = g_strdup(msg_fields);
+		g_free(msg_fields);
+		tmpl2 = g_strconcat( 
+			msg_border, af->title ? af->title : " ", MM_ATTCH_BR,	//field title 
+			msg_border, af->value ? af->value : " ", MM_ATTCH_BR, 	//field value
+			NULL);
+		msg_fields = g_strconcat(tmpl1, tmpl2, NULL);
+		g_free(tmpl1);
+		g_free(tmpl2); 
+	}
+
+	msg_bottom = g_strconcat(MM_ATTCH_LI, MM_ATTCH_BR, NULL);		// bottom line
+	
+	message = g_strconcat(msg_top, msg_fields ? msg_fields : " ", msg_bottom, NULL);
+	g_free(msg_top);
+	g_free(msg_fields);
+	g_free(msg_bottom);
+	g_free(msg_border);
+	g_list_free_full(flds_list, mm_g_free_mattermost_attachment_field); 
+	
+	return message;
+}
+
 // Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
 #define	mm_data_or_broadcast_string(a) (json_object_has_member(data, (a)) ? json_object_get_string_member(data, (a)) : json_object_get_string_member(broadcast, (a)))
 
