@@ -567,7 +567,7 @@ static MattermostRegexElement mm_regexes[MM_MAX_REGEX]={
 	},
 	// horizontal line
 	{	
-	.find = "^ *-{3,}$",
+	.find = "^ *(-|_|\\*){3,}$",
 	.repl = "<hr>",
 	.regex = NULL,
 	},
@@ -711,7 +711,7 @@ mm_markdown_to_html(MattermostAccount *ma, const gchar *markdown)
 		return NULL;
 	}
 	
-	return g_strdup(mm_purple_html_to_xhtml_im_parse(ma, g_strndup(markdown_str, markdown_len)));
+	return mm_purple_html_to_xhtml_im_parse(ma, g_strndup(markdown_str, markdown_len));
 }
 
 
@@ -4180,7 +4180,9 @@ const gchar *message, PurpleMessageFlags flags)
 	
 	ret = mm_conversation_send_message(ma, team_id, room_id, mm_purple_xhtml_im_to_html_parse(ma, message));
 	if (ret > 0) {
-		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self_username, PURPLE_MESSAGE_SEND, mm_markdown_to_html(ma, message), time(NULL));
+		gchar *message_out = mm_markdown_to_html(ma, message);
+		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self_username, PURPLE_MESSAGE_SEND, message_out, time(NULL));
+
 	}
 	return ret;
 }
