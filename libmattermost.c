@@ -4180,7 +4180,9 @@ const gchar *message, PurpleMessageFlags flags)
 	
 	ret = mm_conversation_send_message(ma, team_id, room_id, mm_purple_xhtml_im_to_html_parse(ma, message));
 	if (ret > 0) {
-		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self_username, PURPLE_MESSAGE_SEND, mm_markdown_to_html(ma, message), time(NULL));
+		gchar *message_out = mm_markdown_to_html(ma, message);
+		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self_username, PURPLE_MESSAGE_SEND, message_out, time(NULL));
+		g_free(message_out);
 	}
 	return ret;
 }
