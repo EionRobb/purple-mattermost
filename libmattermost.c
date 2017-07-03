@@ -4505,13 +4505,19 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gchar *full_name;
 	
 	if (json_object_has_member(user, "status_code")) {
-		// may be called from mm_mark_conv_seen() after selecting in UI conv. 
-		// window: Conversation -> New instant message	
-		// without this we will loop with the error below
-		purple_conversation_destroy(purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM, purple_buddy_get_name(buddy), ma->account));
+		// There was an error in the response, which generally means the buddy is invalid somehow
+		const gchar *buddy_name = purple_buddy_get_name(buddy);
+		PurpleIMConversation *imconv = purple_conversations_find_im_with_account(buddy_name, ma->account);
+		
+		if (imconv != NULL) {
+			PurpleConversation *conv = PURPLE_CONVERSATION(imconv);
+			purple_conversation_write_system_message(conv, "Cannot sent message, invalid buddy", PURPLE_MESSAGE_ERROR);
+		} else {
+			purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
+		}
+		
 		// bad user, delete
 		purple_blist_remove_buddy(buddy);
-		purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 	
