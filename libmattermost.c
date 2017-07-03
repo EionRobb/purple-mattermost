@@ -1407,20 +1407,15 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
         purple_notify_user_info_destroy(user_info);
 
-		PurpleBuddy *blistbuddy = purple_blist_find_buddy(ma->account, purple_buddy_get_name(buddy));
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "first_name", mm_user->first_name);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "last_name", mm_user->last_name);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "nickname", mm_user->nickname);
+		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "email", mm_user->email);
 
-		if (blistbuddy != NULL) {
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "first_name", mm_user->first_name);
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "last_name", mm_user->last_name);
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "nickname", mm_user->nickname);
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(blistbuddy), "email", mm_user->email);
-
-			// prepare to match PR51 change
-			// if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
+		if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
 			gchar *alias = g_strdup(mm_get_alias(mm_user));
-			purple_buddy_set_server_alias(blistbuddy, alias);
+			purple_buddy_set_server_alias(buddy, alias);
 			g_free(alias);
-			//}
 		}	
 
 		mm_g_free_mattermost_user(mm_user);
