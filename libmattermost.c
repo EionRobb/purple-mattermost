@@ -151,6 +151,11 @@ json_array_from_string(const gchar *str)
 #define MATTERMOST_CHANNEL_GROUP 'G'
 #define MATTERMOST_CHANNEL_TYPE_STRING(t) (gchar[2]) { t, '\0' }
 
+#define MATTERMOST_MENTION_ME_MATCH(m) (g_strconcat("(?<MNTWRD>", m, ")(?<MNTSEP>([[:^alnum:]\r\n]|$))", NULL)) 
+#define MATTERMOST_MENTION_ME_REPLACE "<u><b>\\g<MNTWRD></b></u>\\g<MNTSEP>"
+#define MATTERMOST_MENTION_ALL_MATCH "(?<MNTWRD>(@|#)[a-z0-9]+)(?<MNTSEP>([[:^alnum:]\r\n]|$))"
+#define MATTERMOST_MENTION_ALL_REPLACE "<u>\\g<MNTWRD></u>\\g<MNTSEP>" //MM does not use underline
+
 // need some string which is unlikely in channel header/purpose
 #define MATTERMOST_CHAT_TOPIC_SEP "\n----- ---- --- -- -\n"
 
@@ -421,6 +426,10 @@ typedef struct {
 	GSList *http_conns; /**< PurpleHttpConnection to be cancelled on logout */
 	gint frames_since_reconnect;
 	GSList *pending_writes;
+
+	GRegex *mention_me_regex;
+	GRegex *mention_all_regex;
+
 } MattermostAccount;
 
 typedef void (*MattermostProxyCallbackFunc)(MattermostAccount *ma, JsonNode *node, gpointer user_data);
@@ -2023,6 +2032,35 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	g_strfreev(mention_keys);
 
+	gchar *regex = g_strdup("");
+
+	GList *j;
+	for (j = ma->mention_words; j != NULL; j=j->next) {
+		const gchar *tmp = j->data;
+		if (j != ma->mention_words) {
+			regex = g_strconcat(regex, "|", tmp, NULL);
+		} else {
+			regex = g_strdup(tmp);
+		}
+	}
+
+	if (ma->mention_all_regex) {
+		g_regex_unref(ma->mention_all_regex);
+	}
+	ma->mention_all_regex = g_regex_new(MATTERMOST_MENTION_ALL_MATCH, G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE, G_REGEX_MATCH_NOTEMPTY, NULL);
+
+	if (ma->mention_me_regex) {
+		g_regex_unref(ma->mention_me_regex);
+	}
+
+	if (!purple_strequal(regex,"")) {		
+		ma->mention_me_regex = g_regex_new(MATTERMOST_MENTION_ME_MATCH(regex), G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE, G_REGEX_MATCH_NOTEMPTY, NULL);
+	} else {
+		ma->mention_me_regex = NULL;
+	}
+
+	g_free(regex);
+
 	//TODO: get avatar ?
 	
 	mm_set_me(ma);
@@ -2272,7 +2310,16 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
-			gchar *message = mm_markdown_to_html(msg_text);
+			gchar *msg_pre = mm_markdown_to_html(msg_text);
+			gchar *msg_post = g_regex_replace(ma->mention_me_regex, msg_pre, -1, 0, MATTERMOST_MENTION_ME_REPLACE, G_REGEX_MATCH_NOTEMPTY, NULL);
+			gchar *message = g_regex_replace(ma->mention_all_regex, msg_post, -1, 0, MATTERMOST_MENTION_ALL_REPLACE, G_REGEX_MATCH_NOTEMPTY, NULL);
+
+			if (!purple_strequal(msg_pre, msg_post)) {
+				msg_flags |= PURPLE_MESSAGE_NICK;
+			}
+
+			g_free(msg_pre);
+			g_free(msg_post);
 			
 			if (json_object_get_int_member(post, "edit_at")) {
 				gchar *tmp = g_strconcat(_("Edited: "), message, NULL);
@@ -3111,6 +3158,8 @@ mm_close(PurpleConnection *pc)
 	g_free(ma->frame); ma->frame = NULL;
 	g_free(ma->session_token); ma->session_token = NULL;
 	g_free(ma->channel); ma->channel = NULL;
+	g_regex_unref(ma->mention_me_regex); ma->mention_me_regex = NULL;
+	g_regex_unref(ma->mention_all_regex); ma->mention_all_regex = NULL;
 	g_free(ma);
 }
 
