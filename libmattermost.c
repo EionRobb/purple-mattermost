@@ -1362,44 +1362,44 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
         nickname = json_object_get_string_member(user, "nickname");
         if (nickname && *nickname) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"Nickname", nickname);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("Nickname"), nickname);
 				mm_user->nickname = g_strdup(nickname);	
         }
 
         first_name = json_object_get_string_member(user, "first_name");
         if (first_name && *first_name) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"First Name", first_name);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("First Name"), first_name);
 				mm_user->first_name = g_strdup(first_name);
         }
 
         last_name = json_object_get_string_member(user, "last_name");
         if (last_name && *last_name) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"Last Name", last_name);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("Last Name"), last_name);
 				mm_user->last_name = g_strdup(last_name);
         }
 
         email = json_object_get_string_member(user, "email");
         if (email && *email) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"Email address", email);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("Email address"), email);
 				mm_user->email = g_strdup(email);
         }
 
 		username = json_object_get_string_member(user, "username");
 		if (username && *username) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"Username", username);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("Username"), username);
 				mm_user->username = g_strdup(username);			
 		}
 
 		user_id = json_object_get_string_member(user, "id");
 		if (user_id && *user_id) {
-                purple_notify_user_info_add_pair_plaintext(user_info,"User ID", user_id);
+                purple_notify_user_info_add_pair_plaintext(user_info,_("User ID"), user_id);
 				mm_user->user_id = g_strdup(user_id);			
 		}
 
 		roles = json_object_get_string_member(user, "roles");
 		if (roles && *roles) {
 				if (mm_role_to_purple_flag(ma, roles) == (PURPLE_CHAT_USER_NONE|PURPLE_CHAT_USER_FOUNDER)) {
-					purple_notify_user_info_add_pair_plaintext(user_info,"Roles", "system administrator");
+					purple_notify_user_info_add_pair_plaintext(user_info,_("Roles"), _("system administrator"));
 				}	
 		}
 
