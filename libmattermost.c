@@ -733,7 +733,7 @@ mm_markdown_to_html(MattermostAccount *ma, const gchar *markdown)
 {
 	static char *markdown_str = NULL;
 	int markdown_len;
-	int flags = MKD_NOPANTS | MKD_NODIVQUOTE | MKD_NODLIST | MKD_GITHUBTAGS;
+	int flags = MKD_NOPANTS | MKD_NODIVQUOTE | MKD_NODLIST;
 	static gboolean markdown_version_checked = FALSE;
 	static gboolean markdown_version_safe = TRUE;
 	
