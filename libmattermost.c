@@ -2383,7 +2383,7 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 	guint fields_len = json_array_get_length(fields);
 
 	GList *flds_list = NULL;
-	gint i;
+	guint i;
 
 	for (i = 0; i < fields_len; i++) {
 		MattermostAttachmentField *fld_cont = g_new0(MattermostAttachmentField, 1); 
