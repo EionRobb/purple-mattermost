@@ -576,7 +576,7 @@ mm_markdown_to_html(const gchar *markdown)
 	if (markdown_len < 0) {
 		return NULL;
 	}
-	
+
 	return g_strndup(markdown_str, markdown_len);
 }
 
@@ -2096,6 +2096,8 @@ mm_have_seen_message_id(MattermostAccount *ma, const gchar *message_id)
 
 static void mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id);
 
+static gchar *mm_process_attachment(JsonObject *attachment);
+
 static gint64
 mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *data)
 {
@@ -2106,6 +2108,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	const gchar *user_id = json_object_get_string_member(post, "user_id");
 	const gchar *username = json_object_get_string_member(data, "sender_name");
 	const gchar *channel_type = json_object_get_string_member(data, "channel_type");
+	const gchar *type = json_object_get_string_member(post, "type");
 	const gchar *pending_post_id = json_object_get_string_member(post, "pending_post_id");
 	const gchar *name = g_hash_table_lookup(ma->group_chats, channel_id);
 	JsonObject *props = json_object_get_object_member(post, "props");
@@ -2115,10 +2118,25 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	gint64 timestamp = update_at / 1000;
 	gchar *use_username;
 
-	if (purple_strequal(from_webhook, "true") && override_username && *override_username) {
-		use_username = g_strconcat(override_username, MATTERMOST_BOT_LABEL, NULL);
-	} else {
-		use_username = g_strdup(username);
+	gchar *attachments = NULL;
+
+	if (purple_strequal(type, "slack_attachment")) {
+		JsonArray *attchs = json_object_get_array_member(props, "attachments");
+		guint i, len = json_array_get_length(attchs);
+		gchar *tmpa1, *tmpa2;
+		for (i=0; i < len ; i++) {
+			JsonObject *attch = json_node_get_object(json_array_get_element(attchs, i));
+			tmpa1 = g_strdup(attachments);
+			tmpa2 = mm_process_attachment(attch);
+			g_free(attachments);
+			if (tmpa1) {
+				attachments = g_strconcat(tmpa1, tmpa2, NULL);
+			} else {
+				attachments = g_strdup(tmpa2);
+			}
+			g_free(tmpa1);
+			g_free(tmpa2);
+		}
 	}
 
 	// ephemeral messages have update_at:0
@@ -2127,7 +2145,16 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		timestamp = create_at / 1000;
 		update_at = create_at;
 	}
-	PurpleMessageFlags msg_flags = (purple_strequal(user_id, ma->self_user_id) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
+
+	PurpleMessageFlags msg_flags;
+
+	if (purple_strequal(from_webhook, "true") && override_username && *override_username) {
+		use_username = g_strconcat(override_username, MATTERMOST_BOT_LABEL, NULL);
+		msg_flags = PURPLE_MESSAGE_RECV;	// user_id for BOT is webhook owner ID .. t own BOTS as such too !
+	} else {
+		use_username = g_strdup(username);
+		msg_flags = (purple_strequal(user_id, ma->self_user_id) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
+	}
 	
 	if (username != NULL && !g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 		g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
@@ -2154,7 +2181,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
 			gchar *message = mm_markdown_to_html(msg_text);
-			
+
 			if (json_object_get_int_member(post, "edit_at")) {
 				gchar *tmp = g_strconcat(_("Edited: "), message, NULL);
 				g_free(message);
@@ -2206,7 +2233,9 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				}
 				
 				// Group chat message
-				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, message, timestamp);
+				gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
+				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, msg_out, timestamp);
+				g_free(msg_out);
 				
 				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
 					mm_mark_room_messages_read(ma, channel_id);
@@ -2214,8 +2243,11 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				
 			} else {
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
-					purple_serv_got_im(ma->pc, use_username, message, msg_flags, timestamp);
+					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
+					purple_serv_got_im(ma->pc, use_username, msg_out, msg_flags, timestamp);
 					
+					g_free(msg_out);
+				
 					if (channel_type && *channel_type == MATTERMOST_CHANNEL_DIRECT && !g_hash_table_contains(ma->one_to_ones, channel_id)) {
 						g_hash_table_replace(ma->one_to_ones, g_strdup(channel_id), g_strdup(username));
 						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(channel_id));
@@ -2246,6 +2278,8 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	}
 	
 	g_free(use_username);
+	g_free(attachments);
+
 	return update_at;
 }
 
@@ -2293,6 +2327,116 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 	json_object_set_int_member(obj, "seq", mm_get_next_seq_callback(ma, mm_got_hello_user_statuses, NULL));
 	
 	mm_socket_write_json(ma, obj);
+}
+
+
+static gchar *
+mm_process_attachment(JsonObject *attachment)
+{
+//TODO: sanitze input strings !
+//TODO: libpurple xhtml-im parser is .. fragile .. easy to get output not htmlized ...
+#define MM_ATT_LINE "<hr>"
+#define MM_ATT_BREAK "<br>"
+#define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
+#define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
+#define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
+#define MM_ATT_FTITLE(t) "<b>", t, "</b><br>"
+#define MM_ATT_IMAGE(i) "<a href=\"", i, "\">", i, "</a><br>"
+#define MM_ATT_TEXT(t) "<span>", t, "</span><br>"
+
+typedef struct {
+	gchar *title;
+	gchar *value;
+	// short
+} MattermostAttachmentField;
+
+void mm_g_free_mattermost_attachment_field(gpointer f) 
+{
+	MattermostAttachmentField *af = f;
+	if (!af) return;
+	g_free(af->title);
+	g_free(af->value);
+	g_free(af);
+}
+
+	gchar *msg_top = NULL;
+	gchar *msg_fields = NULL;
+	gchar *message = NULL;
+
+	//fallback
+	const gchar *color = json_object_get_string_member(attachment, "color");
+	const gchar *pretext = json_object_get_string_member(attachment, "pretext");
+	const gchar *text = json_object_get_string_member(attachment, "text");
+	const gchar *author_name = json_object_get_string_member(attachment, "author_name");
+	//const gchar *author_icon = json_object_get_string_member(attachment, "author_icon");
+	const gchar *author_link = json_object_get_string_member(attachment,"author_link");
+	const gchar *title = json_object_get_string_member(attachment, "title");
+	const gchar *title_link = json_object_get_string_member(attachment, "title_link");
+	// following are not implemented in MM 3.09 (yet?)
+	const gchar *image_url = json_object_get_string_member(attachment, "image_url");
+	//const gchar *thumb_url = json_object_get_string_member(attachment, "thumb_url");	
+	//const gchar *footer = json_object_get_string_member(attachment, "footer");
+	//const gchar *footer_icon = json_object_get_string_member(attachment, "footer_icon");
+	//const gint64 *ts = json_object_get_int_member(attachment, "ts");
+
+	JsonArray *fields = json_object_get_array_member(attachment, "fields");
+	guint fields_len = json_array_get_length(fields);
+
+	GList *flds_list = NULL;
+	gint i;
+
+	for (i = 0; i < fields_len; i++) {
+		MattermostAttachmentField *fld_cont = g_new0(MattermostAttachmentField, 1); 
+		JsonObject *field = json_node_get_object(json_array_get_element(fields, i));
+	
+		fld_cont->title = g_strdup(json_object_get_string_member(field, "title"));
+		fld_cont->value = g_strdup(json_object_get_string_member(field, "value"));
+		//fld_cont-> short : we cannot format in multi-column (easily..)
+		flds_list = g_list_append(flds_list, fld_cont);
+	}
+
+	//TODO: symbolic color names .. and checking
+
+	if (!color) {
+		color = "#FFFFFF";
+	}
+
+	msg_top = g_strconcat(
+		MM_ATT_BREAK, MM_ATT_TEXT(pretext),
+		MM_ATT_LINE,
+		MM_ATT_BORDER(color), MM_ATT_AUTHOR(author_name,author_link),
+		MM_ATT_BORDER(color), MM_ATT_TITLE(title,title_link),
+		MM_ATT_BORDER(color), MM_ATT_TEXT(text),
+		MM_ATT_BORDER(color), MM_ATT_IMAGE(image_url), 
+		NULL);
+	
+	GList *j;
+	gchar *tmpl1 = NULL;
+	gchar *tmpl2 = NULL;
+
+	for (j=flds_list; j != NULL; j=j->next) {
+		MattermostAttachmentField *af = j->data;
+		tmpl1 = g_strdup(msg_fields);
+		g_free(msg_fields);
+		tmpl2 = g_strconcat(
+			MM_ATT_BORDER(color), MM_ATT_FTITLE(af->title),
+			MM_ATT_BORDER(color), MM_ATT_TEXT(af->value),
+			NULL);
+		if (tmpl1) {
+			msg_fields = g_strconcat(tmpl1, tmpl2, NULL);
+		} else {
+			msg_fields = g_strdup(tmpl2);
+		}
+		g_free(tmpl1);
+		g_free(tmpl2); 
+	}
+	
+	message = g_strconcat(msg_top, msg_fields ? msg_fields : " ", MM_ATT_LINE, NULL);
+	g_free(msg_top);
+	g_free(msg_fields);
+	g_list_free_full(flds_list, mm_g_free_mattermost_attachment_field); 
+
+	return message;
 }
 
 // Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
