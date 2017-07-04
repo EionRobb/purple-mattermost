@@ -2233,11 +2233,9 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				}
 				
 				// Group chat message
-				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, message, timestamp);
-
-				if (attachments) {
-					purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, attachments, timestamp);
-				}
+				gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
+				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, msg_out, timestamp);
+				g_free(msg_out);
 				
 				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
 					mm_mark_room_messages_read(ma, channel_id);
@@ -2245,12 +2243,11 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				
 			} else {
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
-					purple_serv_got_im(ma->pc, use_username, message, msg_flags, timestamp);
+					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
+					purple_serv_got_im(ma->pc, use_username, msg_out, msg_flags, timestamp);
 					
-					if (attachments) {
-						purple_serv_got_im(ma->pc, use_username, attachments, msg_flags, timestamp);
-					}
-
+					g_free(msg_out);
+				
 					if (channel_type && *channel_type == MATTERMOST_CHANNEL_DIRECT && !g_hash_table_contains(ma->one_to_ones, channel_id)) {
 						g_hash_table_replace(ma->one_to_ones, g_strdup(channel_id), g_strdup(username));
 						g_hash_table_replace(ma->one_to_ones_rev, g_strdup(username), g_strdup(channel_id));
@@ -2261,7 +2258,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					}
 					
 				} else {
-printf("NOOO?\n");
 					const gchar *other_user = g_hash_table_lookup(ma->one_to_ones, channel_id);
 					// TODO null check
 					PurpleIMConversation *imconv = purple_conversations_find_im_with_account(other_user, ma->account);
@@ -2337,9 +2333,10 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 static gchar *
 mm_process_attachment(JsonObject *attachment)
 {
+//TODO: sanitze input strings !
+//TODO: libpurple xhtml-im parser is .. fragile .. easy to get output not htmlized ...
 #define MM_ATT_LINE "<hr>"
 #define MM_ATT_BREAK "<br>"
-#define MM_ATT_INDENT "  "
 #define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
 #define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
 #define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
@@ -2364,8 +2361,6 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 
 	gchar *msg_top = NULL;
 	gchar *msg_fields = NULL;
-	gchar *msg_bottom = NULL;
-	gchar *msg_border = NULL;
 	gchar *message = NULL;
 
 	//fallback
@@ -2400,14 +2395,14 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 		flds_list = g_list_append(flds_list, fld_cont);
 	}
 
-	//TODO: symbolic color names ?
+	//TODO: symbolic color names .. and checking
 
 	if (!color) {
 		color = "#FFFFFF";
 	}
 
 	msg_top = g_strconcat(
-		MM_ATT_TEXT(pretext),
+		MM_ATT_BREAK, MM_ATT_TEXT(pretext),
 		MM_ATT_LINE,
 		MM_ATT_BORDER(color), MM_ATT_AUTHOR(author_name,author_link),
 		MM_ATT_BORDER(color), MM_ATT_TITLE(title,title_link),
@@ -2425,7 +2420,6 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 		g_free(msg_fields);
 		tmpl2 = g_strconcat(
 			MM_ATT_BORDER(color), MM_ATT_FTITLE(af->title),
-	//		MM_ATT_INDENT, MM_ATT_TEXT(af->value), FIXME !!!!
 			MM_ATT_BORDER(color), MM_ATT_TEXT(af->value),
 			NULL);
 		if (tmpl1) {
@@ -2440,8 +2434,6 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 	message = g_strconcat(msg_top, msg_fields ? msg_fields : " ", MM_ATT_LINE, NULL);
 	g_free(msg_top);
 	g_free(msg_fields);
-	g_free(msg_bottom);
-	g_free(msg_border);
 	g_list_free_full(flds_list, mm_g_free_mattermost_attachment_field); 
 
 	return message;
