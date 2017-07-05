@@ -1363,6 +1363,8 @@ mm_get_open_channels_for_team(MattermostAccount *ma, const gchar *team_id)
 
 gboolean mm_idle_updater_timeout(gpointer data);
 
+void mm_set_status(PurpleAccount *account, PurpleStatus *status);
+
 static void
 mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -1385,7 +1387,9 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	g_list_free(teams);
 	
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
-	
+
+	// we need team_id for this.
+	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 	// Update our idleness every 4.5 minutes
 	ma->idle_timeout = purple_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
@@ -2875,9 +2879,20 @@ mm_set_status(PurpleAccount *account, PurpleStatus *status)
 	const char *status_id = purple_status_get_id(status);
 	JsonObject *data;
 	const gchar *team_id = mm_get_first_team_id(ma);
-	gchar *cmd = g_strconcat("/", status_id, NULL);
+	gchar *cmd; 
 	gchar *postdata, *url;
-	
+
+	// tell MM that we are going offline but do not disconnect.
+	// will stay in MM as offline until next status change.
+	// when posting status changes for online for ~ 30 secs
+	// then changes back again.
+
+	if (purple_strequal(status_id, "invisible")) {
+		cmd = g_strconcat("/", "offline", NULL);
+	} else {
+		cmd = g_strconcat("/", status_id, NULL);
+	}
+
 	data = json_object_new();
 	json_object_set_string_member(data, "command", cmd);
 	json_object_set_string_member(data, "channel_id", "");
@@ -3085,6 +3100,8 @@ mm_close(PurpleConnection *pc)
 	
 	g_return_if_fail(ma != NULL);
 	
+	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
+
 	purple_timeout_remove(ma->idle_timeout);
 	purple_timeout_remove(ma->read_messages_timeout);
 	
@@ -4868,6 +4885,9 @@ mm_status_types(PurpleAccount *account)
 	status = purple_status_type_new_full(PURPLE_STATUS_OFFLINE, "offline", "Offline", TRUE, TRUE, FALSE);
 	types = g_list_append(types, status);
 	
+	status = purple_status_type_new_full(PURPLE_STATUS_INVISIBLE, "invisible", "Invisible", TRUE, TRUE, FALSE);
+	types = g_list_append(types, status);
+
 	return types;
 }
 
