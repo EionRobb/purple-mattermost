@@ -1504,6 +1504,11 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
         purple_notify_user_info_destroy(user_info);
 
+		// don't add ourselves to buddy list
+		if (purple_buddy_get_name(buddy), ma->self_username) {
+			return;
+		}
+
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "first_name", mm_user->first_name);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "last_name", mm_user->last_name);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "nickname", mm_user->nickname);
@@ -1525,11 +1530,12 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
         PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
         gchar *url;
 
+		// Don't add BOT to buddies
 		// hope no user account/alias ends in [BOT] ... 
 		if (purple_str_has_suffix(username, MATTERMOST_BOT_LABEL)) {
 			PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
 			purple_notify_user_info_add_pair_plaintext(user_info,_("BOT Name"), purple_strreplace(username, MATTERMOST_BOT_LABEL, ""));
-			gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "https://" : "http://", ma->server, "/", g_hash_table_lookup(ma->teams, mm_get_first_team_id(ma)), "/integrations/", NULL); //FIXME JAREK
+			gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "see https://" : "http://", ma->server, "/ -> team -> integrations", NULL); //We do not know which team is the BOT on.
 			purple_notify_user_info_add_pair_plaintext(user_info,_("Information"), info);
 			purple_notify_user_info_add_section_break(user_info);
 			purple_notify_user_info_add_pair_plaintext(user_info, NULL, "Mattermost webhook integration");
@@ -3738,11 +3744,6 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 	JsonObject *obj = json_node_get_object(node);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
-	gboolean found_myself = FALSE;
-
-	if (chatconv != NULL) {
-		found_myself = purple_chat_conversation_has_user(chatconv, ma->self_username);
-	}
 
 	if (json_object_get_int_member(obj, "status_code") >= 400) {
 		purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
@@ -3760,11 +3761,6 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			const gchar *user_id = json_object_get_string_member(user, "id");
 			const gchar *username = json_object_get_string_member(user, "username");
 			const gchar *roles = json_object_get_string_member(user, "roles");
-
-			if (!found_myself && purple_strequal(ma->self_username, username)) {
-				found_myself = TRUE;
-				continue;
-			}
 
 			if (!g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 				g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
@@ -4309,11 +4305,15 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 
 		if (purple_str_has_suffix(who, MATTERMOST_BOT_LABEL)) {
 			purple_notify_error(ma->pc, "Error", "You cannot send instant message to a BOT", "(However you may be able to interact with it using \"/cmd command\" in a chat)", purple_request_cpar_from_connection(ma->pc));
-			//TODO: remove conversation (segfaults in libpurple 2 if called here) 
-			return 0;
+			//TODO: 'disable' im conv window ?
+			return -1;
 		}
 
-		//FIXME: cannot send to myself
+		if (purple_strequal(who, ma->self_username)) {
+			purple_notify_error(ma->pc, "Error", "You cannot send instant message to yourself", "", purple_request_cpar_from_connection(ma->pc));
+			//TODO: 'disable' im conv window ? 
+			return -1;
+		}	
 
 		JsonObject *data;
 		gchar *url, *postdata;
@@ -4718,7 +4718,10 @@ mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy)
 	json_object_set_string_member(data, "user_id", user_id);
 	postdata = json_object_to_string(data);
 
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", mm_get_first_team_id(ma));
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", mm_get_first_team_id(ma)); 
+	//FIXME:is this buddy on that team ? 
+	//		We need to get info about user first
+	//		but still on which team are we on now ?
 
 	mm_fetch_url(ma, url, postdata, mm_create_direct_channel_response, g_strdup(user_id));
 	
@@ -4732,6 +4735,16 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 	const gchar *buddy_name = purple_buddy_get_name(buddy);
 	const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, buddy_name);
 	
+	if (purple_strequal(user_id,ma->self_user_id)) {
+		purple_blist_remove_buddy(buddy);	
+		return;
+	}
+
+	if (purple_str_has_suffix(buddy_name, MATTERMOST_BOT_LABEL)) {
+		purple_blist_remove_buddy(buddy);
+		return;
+	}
+
 	if (user_id == NULL) {
 		gchar *url;
 		
