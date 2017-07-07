@@ -2585,7 +2585,8 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 
 		if (chatconv != NULL) {
-			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
+			if (!purple_chat_conversation_has_left(chatconv))
+				purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
 		} else if (purple_strequal(user_id, ma->self_user_id) && !g_hash_table_contains(ma->group_chats, channel_id)) {
 			mm_get_channel_by_id(ma, team_id, channel_id);
 		}
@@ -2604,7 +2605,9 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			if (g_hash_table_contains(ma->group_chats, channel_id)) {
 				PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 				if (chat) {
-					//TODO: remove conversation window ?
+					PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+					if (chatconv) purple_conv_chat_left(chatconv);
+					mm_remove_group_chat(ma, channel_id);
 					mm_remove_group_chat(ma, channel_id); 
 					purple_blist_remove_chat(chat);
 				}
@@ -2665,6 +2668,8 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		if (g_hash_table_contains(ma->group_chats, channel_id)) {
 			PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 			if (chat) {
+				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+				if (chatconv) purple_conv_chat_left(chatconv);
 				mm_remove_group_chat(ma, channel_id);
 				purple_blist_remove_chat(chat);
 			}
@@ -3958,9 +3963,16 @@ mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 static void
 mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	//TODO: check if join succeeded 
 	gchar *url;
 	MattermostChannel *channel = user_data;
+	JsonObject *obj = json_node_get_object(node);
+
+	if (json_object_get_int_member(obj, "status_code") >= 400) {
+		purple_notify_error(ma->pc, "Error", "Error joining channel", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
+		if (chatconv) purple_conv_chat_left(chatconv);
+		return;
+	}
 
 	if (!mm_purple_blist_find_chat(ma, channel->id)) {
 		mm_get_channel_by_id(ma, channel->team_id, channel->id);
@@ -3997,7 +4009,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	const gchar *id = g_hash_table_lookup(chatdata, "id");
 	const gchar *name = g_hash_table_lookup(chatdata, "name");
 	const gchar *team_id = g_hash_table_lookup(chatdata, "team_id");
-	PurpleChatConversation *chatconv = purple_conversations_find_chat_with_account(id, ma->account);
+	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(id));
 	
 	if (chatconv != NULL && !purple_chat_conversation_has_left(chatconv)) {
 		purple_conversation_present(PURPLE_CONVERSATION(chatconv));
