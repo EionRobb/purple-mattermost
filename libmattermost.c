@@ -145,7 +145,8 @@ json_array_from_string(const gchar *str)
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
-#define MATTERMOST_CHANNEL_SEPARATOR " / "
+#define MATTERMOST_CHANNEL_SEPARATOR_VISUAL " / "
+#define MATTERMOST_CHANNEL_SEPARATOR "---"
 #define MATTERMOST_CHANNEL_OPEN 'O'
 #define MATTERMOST_CHANNEL_PRIVATE 'P'
 #define MATTERMOST_CHANNEL_DIRECT 'D'
@@ -1364,7 +1365,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
 
-			gchar *alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+			gchar *alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
 			purple_chat_set_alias(chat, alias);
 
 			if (autojoin) {
@@ -1427,11 +1428,8 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		
 		mm_get_open_channels_for_team(ma, team_id);
 	}
-	
 	g_list_free(teams);
-	
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
-
 	// we need team_id for this.
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 	// Update our idleness every 4.5 minutes
@@ -1592,7 +1590,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 		purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "type", type);
 
-		gchar *alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+		gchar *alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
 		purple_chat_set_alias(chat, alias);
 		g_free(alias);
 
