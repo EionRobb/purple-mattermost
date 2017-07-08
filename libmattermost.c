@@ -676,6 +676,32 @@ mm_purple_xhtml_im_html_init(void)
 }
 
 static gchar *
+mm_purple_html_to_xhtml_im_parse(MattermostAccount *ma, const gchar *html)
+{
+	gint i;
+	gchar *input = NULL;
+	gchar *output = NULL;
+
+	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
+		return g_strdup(html);
+	}
+ 
+	if (html == NULL) {
+		return NULL;
+	}
+
+	input = g_strdup(html);
+	for (i=0;i< MM_MAX_REGEX; i++) {
+		output = g_regex_replace(mm_regexes[i].regex, input, -1, 0, mm_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
+		g_free(input);
+		input = g_strdup(output);
+		g_free(output);
+	}
+	
+	return g_strdup(input);
+}
+
+static gchar *
 mm_purple_xhtml_im_to_html_parse(MattermostAccount *ma, const gchar *xhtml_im)
 {
 	gint i;
@@ -5519,28 +5545,3 @@ plugin_query(GError **error)
 PURPLE_PLUGIN_INIT(mattermost, plugin_query, libpurple3_plugin_load, libpurple3_plugin_unload);
 
 #endif
-	gint i;
-	gchar *input = NULL;
-	gchar *output = NULL;
-
-	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
-		return g_strdup(xhtml_im);
-	}
-
-	if (xhtml_im == NULL) {
-		return NULL;
-	}
-
-	input = g_strdup(xhtml_im);
-	for (i=0;i< MM_MAX_REV_REGEX; i++) {
-		output = g_regex_replace(mm_rev_regexes[i].regex, input, -1, 0, mm_rev_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
-		g_free(input);
-		input = g_strdup(output);
-		g_free(output);
-	}
-
-	return g_strdup(input);
-}
-
-static gchar *
-=======
