@@ -42,13 +42,13 @@ else
     #
     CFLAGS += -I/opt/local/include 
 	# gcc does not support relro
-	LDFLAGS = -lz $(OS)
+    LDFLAGS = -lz $(OS)
 
     CC = gcc
-	CPP = cpp
+    CPP = cpp
   else
     CC ?= gcc
-	CPP ?= cpp
+    CPP ?= cpp
   endif
 
   ifeq ($(shell $(PKG_CONFIG) --exists purple-3 2>/dev/null && echo "true"),)
@@ -134,7 +134,7 @@ FAILNOPURPLE:
 	@echo "Error: You need libpurple (2 or 3) development headers installed to be able to compile this plugin"
 
 FAILNOLIBS:
-	@echo "Error: You need GLib 2, JSON-GLib development headers installed to be able to compile this plugin"
+	@echo "Error: You need GLib 2 and JSON-GLib development headers installed to be able to compile this plugin"
 
 FAILNODISCOUNT:
 	@echo "Error: You need libmarkdown (discount) development headers installed to be able to compile this plugin"

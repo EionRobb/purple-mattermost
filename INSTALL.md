@@ -138,7 +138,7 @@ sudo yum localinstall ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm ./rpmdir/RPMS/\*
 
 ## MacOS X Client Install Guide
 
-You will need XCode Command line tools [installed](http://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/), then install [Homebrew](https://brew.sh/) and package dependencies:
+You will need XCode command line tools [installed](http://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/), then install [Homebrew](https://brew.sh/) and package dependencies:
 
 ```
 brew install json-glib pidgin discount --with-shared
