@@ -72,7 +72,7 @@ else
   endif
 
   # no pkg-config for libmarkdown, just try if header is on include path.
-  ifeq ($(shell echo "" | $(CPP) $(CFLAGS) --include mkdio.h - -o /dev/null 2>/dev/null && echo "true"),)
+  ifeq ($(shell echo "" | $(CPP) $(CFLAGS) -include mkdio.h - -o /dev/null 2>/dev/null && echo "true"),)
     MATTERMOST_TARGET = FAILNODISCOUNT
   endif
 
