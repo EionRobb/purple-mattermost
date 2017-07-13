@@ -1670,23 +1670,19 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 		return;
 	}
 
-	JsonObject *data = json_object_new();
-	JsonArray *user_ids = json_array_new();
+	JsonArray *data = json_array_new();
 
 	for (i = ids; i; i = i->next) {
 		mm_user = i->data;
-		json_array_add_string_element(user_ids, mm_user->user_id);
+		json_array_add_string_element(data, mm_user->user_id);
 	}
 
-	// How to create unnamed array in json-glib ??
-	json_object_set_array_member(data, "dont-want-name", user_ids);
-	postdata = json_object_to_string(data);
+	postdata = json_array_to_string(data);
 	url = mm_build_url(ma, "/api/v3/users/ids");
 
-	// g_strrstr -> hack to get unnamed array
-	mm_fetch_url(ma, url, g_strrstr(postdata,"["), mm_get_users_by_ids_response, ids);
+	mm_fetch_url(ma, url, postdata, mm_get_users_by_ids_response, ids);
 
-	json_object_unref(data);
+	json_array_unref(data);
 	g_free(postdata);
 	g_free(url);
 }
