@@ -2377,20 +2377,6 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 }
 
 
-static gchar *
-mm_process_attachment(JsonObject *attachment)
-{
-//TODO: sanitze input strings !
-//TODO: libpurple xhtml-im parser is .. fragile .. easy to get output not htmlized ...
-#define MM_ATT_LINE "<hr>"
-#define MM_ATT_BREAK "<br>"
-#define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
-#define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
-#define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
-#define MM_ATT_FTITLE(t) "<b>", t, "</b><br>"
-#define MM_ATT_IMAGE(i) "<a href=\"", i, "\">", i, "</a><br>"
-#define MM_ATT_TEXT(t) "<span>", t, "</span><br>"
-
 typedef struct {
 	gchar *title;
 	gchar *value;
@@ -2405,6 +2391,20 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 	g_free(af->value);
 	g_free(af);
 }
+
+static gchar *
+mm_process_attachment(JsonObject *attachment)
+{
+//TODO: sanitze input strings !
+//TODO: libpurple xhtml-im parser is .. fragile .. easy to get output not htmlized ...
+#define MM_ATT_LINE "<hr>"
+#define MM_ATT_BREAK "<br>"
+#define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
+#define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
+#define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
+#define MM_ATT_FTITLE(t) "<b>", t, "</b><br>"
+#define MM_ATT_IMAGE(i) "<a href=\"", i, "\">", i, "</a><br>"
+#define MM_ATT_TEXT(t) "<span>", t, "</span><br>"
 
 	gchar *msg_top = NULL;
 	gchar *msg_fields = NULL;
