@@ -145,6 +145,8 @@ json_array_from_string(const gchar *str)
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
+#define MATTERMOST_CHANNEL_SEPARATOR_VISUAL " / "
+#define MATTERMOST_CHANNEL_SEPARATOR "---"
 #define MATTERMOST_CHANNEL_OPEN 'O'
 #define MATTERMOST_CHANNEL_PRIVATE 'P'
 #define MATTERMOST_CHANNEL_DIRECT 'D'
@@ -383,6 +385,7 @@ typedef struct {
 	GHashTable *usernames_to_ids; // username -> user id
 	GHashTable *ids_to_usernames; // user id -> username
 	GHashTable *teams;            // A list of known team_id's -> team names
+	GHashTable *teams_display_names; // an descriptive names too.
 	GHashTable *channel_teams;    // A list of channel_id -> team_id to know what team a channel is in
 	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
 
@@ -398,6 +401,30 @@ typedef struct {
 	MattermostProxyCallbackFunc callback;
 	gpointer user_data;
 } MattermostProxyConnection;
+
+typedef struct {
+	gchar *id;
+	gchar *team_id;
+	gchar *name;
+	gchar *type;
+	gchar *display_name;
+	gchar *header;
+	gchar *purpose;	
+} MattermostChannel;
+
+void
+mm_g_free_mattermost_channel(gpointer a)
+{
+	MattermostChannel *c = a;
+	if (!c) return;
+	g_free(c->id);
+	g_free(c->team_id);
+	g_free(c->name);
+	g_free(c->display_name);
+	g_free(c->type);
+	g_free(c->header);
+	g_free(c->purpose);
+}
 
 typedef struct {
 	gchar *user_id;
@@ -1130,20 +1157,10 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
-typedef struct {
-	gchar *id;
-	gchar *team_id;
-	gchar *type;
-	gchar *display_name;
-	gchar *name;
-//	gchar *header;
-//	gchar *purpose;	
-} MattermostChannel;
-
 static void mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels);
 
 PurpleGroup* mm_get_or_create_default_group();
-static void mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since);
+static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
 static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
 
 static void mm_start_socket(MattermostAccount *ma);
@@ -1151,60 +1168,44 @@ static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
 static void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
 static void mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy);
 
-static void mm_join_room(MattermostAccount *ma, const gchar *team_id, MattermostChannel *channel);
+static void mm_join_room(MattermostAccount *ma, MattermostChannel *channel);
 static PurpleChatUserFlags mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist);
 
-
-void 
-mm_g_free_mattermostchannel(gpointer ch)
-{
-	MattermostChannel *mc = ch;
-	g_free(mc->id);
-	g_free(mc->team_id);
-	g_free(mc->type);
-	g_free(mc->display_name);
-}
-
 int 
-mm_compare_channels_int(gconstpointer a, gconstpointer b)
+mm_compare_channels_by_id_team_id_int(gconstpointer a, gconstpointer b)
 {
 	const MattermostChannel *p1 = a;
 	const MattermostChannel *p2 = b;
 
-	if (!g_strcmp0(p1->id,p2->id)) {
-		return 0;
-	}
+	if (!g_strcmp0(p1->id,p2->id) && !g_strcmp0(p1->team_id,p2->team_id)) return 0;
+
+	return -1;
+}
+
+int 
+mm_compare_channels_by_id_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostChannel *p1 = a;
+	const MattermostChannel *p2 = b;
+
+	if (!g_strcmp0(p1->id,p2->id)) return 0;
+
 	return -1;
 }
 
 int
 mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b)
 {
-	const MattermostChannel *p1 = a;
-	const MattermostChannel *p2 = b;
+        const MattermostChannel *p1 = a;
+        const MattermostChannel *p2 = b;
 
-	gint res = g_strcmp0(p1->display_name,p2->display_name);
+        gint res = g_strcmp0(p1->display_name,p2->display_name);
 
-	if (res < 0) { return 1;}
-	if (res > 0) { return -1;}
+        if (res < 0) { return 1;}
+        if (res > 0) { return -1;}
 
-	return 0;
+        return 0;
 }
-
-int
-mm_compare_channels_by_name_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostChannel *p1 = a;
-	const MattermostChannel *p2 = b;
-
-	gint res = g_strcmp0(p1->name,p2->name);
-	
-	if (res < 0) { return 1;}
-	if (res > 0) { return -1;}
-
-	return 0;
-}
-
 
 const gchar *
 mm_get_alias(MattermostUser *mu)
@@ -1222,6 +1223,40 @@ mm_get_alias(MattermostUser *mu)
 	
 	return alias;
 }
+
+static void mm_set_group_chat(MattermostAccount *ma, const gchar *team_id, const gchar *channel_name, const gchar *channel_id);
+
+// only non-changing values are channel_id and team_id !
+// name and display_name for teams and channels can change
+PurpleChat *
+mm_purple_blist_find_chat(MattermostAccount *ma, const gchar *channel_id)
+{
+	PurpleBlistNode *bnode;
+	for (bnode = purple_blist_get_root(); bnode != NULL; bnode = purple_blist_node_next(bnode, FALSE)) {
+		if (!PURPLE_IS_CHAT(bnode)) continue;
+		if (purple_chat_get_account(PURPLE_CHAT(bnode)) != ma->account) continue;
+
+		GHashTable *components = purple_chat_get_components(PURPLE_CHAT(bnode));
+		
+		if (purple_strequal(g_hash_table_lookup(components, "id"), channel_id)) return PURPLE_CHAT(bnode);
+	}
+	return NULL;
+}
+
+void
+mm_purple_blist_remove_chat(MattermostAccount *ma, const gchar *channel_id)
+{
+	PurpleBlistNode *bnode;
+	for (bnode = purple_blist_get_root(); bnode != NULL; bnode = purple_blist_node_next(bnode, FALSE)) {
+		if (!PURPLE_IS_CHAT(bnode)) continue;
+		if (purple_chat_get_account(PURPLE_CHAT(bnode)) != ma->account) continue;
+
+		GHashTable *components = purple_chat_get_components(PURPLE_CHAT(bnode));
+		
+		if (purple_strequal(g_hash_table_lookup(components, "id"), channel_id)) purple_blist_remove_chat(PURPLE_CHAT(bnode));
+	}
+}
+
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -1243,12 +1278,12 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		mm_channel->id = g_strdup(json_object_get_string_member(channel, "id"));
 		mm_channel->display_name = g_strdup(json_object_get_string_member(channel, "display_name"));
 		mm_channel->type = g_strdup(json_object_get_string_member(channel, "type"));
-		mm_channel->team_id = g_strdup(team_id);
-
+		
 		const gchar *name = json_object_get_string_member(channel, "name");
 		
 		if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, mm_channel->id)) {
+				mm_channel->team_id = g_strdup(mm_get_first_team_id(ma));
 				gchar **names = g_strsplit(name, "__", 2);
 				mm_channel->name = g_strdup(purple_strequal(names[0], ma->self_user_id) ? names[1] : names[0]);
 				g_strfreev(names);
@@ -1257,30 +1292,40 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		} else {
 			mm_channel->name=g_strdup(name);
 			if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_GROUP) {
+				mm_channel->team_id = g_strdup(mm_get_first_team_id(ma));
 				group_channels = g_list_prepend(group_channels, mm_channel);
 			} else {
+				mm_channel->team_id = g_strdup(json_object_get_string_member(channel, "team_id"));
 				other_channels = g_list_prepend(other_channels, mm_channel);
 			}
 		}
+
+
 	}
 	
 	// remove from blist unseen buddies and chats (removed MM channels)
-	for (bnode = purple_blist_get_root(); bnode != NULL; bnode = purple_blist_node_next(bnode, TRUE)) {
+	for (bnode = purple_blist_get_root(); bnode != NULL; bnode = purple_blist_node_next(bnode, FALSE)) {
 		MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
 		GList *foundchannel;
 
 		if (PURPLE_IS_CHAT(bnode) && purple_chat_get_account(PURPLE_CHAT(bnode)) == ma->account) {
-			tmpchannel->id = g_strdup(purple_blist_node_get_string(bnode, "room_id"));
-			foundchannel = g_list_find_custom(other_channels, tmpchannel, mm_compare_channels_int);
-			if (!foundchannel) {
-				foundchannel = g_list_find_custom(group_channels, tmpchannel, mm_compare_channels_int);
+			GHashTable *components = purple_chat_get_components(PURPLE_CHAT(bnode));
+			tmpchannel->id = g_hash_table_lookup(components, "id");
+			tmpchannel->team_id = g_hash_table_lookup(components, "team_id");
+			tmpchannel->name = g_hash_table_lookup(components, "name");
+
+			if(purple_strequal(tmpchannel->team_id, team_id)) {
+				foundchannel = g_list_find_custom(other_channels, tmpchannel, mm_compare_channels_by_id_team_id_int);
 				if (!foundchannel) {
-					removenodes = g_list_prepend(removenodes, bnode);
-				}	
-			}	 
+					foundchannel = g_list_find_custom(group_channels, tmpchannel, mm_compare_channels_by_id_team_id_int);
+					if (!foundchannel) {
+						removenodes = g_list_prepend(removenodes, bnode);
+					}	
+				}
+			}		 
 		} else if (PURPLE_IS_BUDDY(bnode) && purple_buddy_get_account(PURPLE_BUDDY(bnode)) == ma->account) {	
 			tmpchannel->id = g_strdup(purple_blist_node_get_string(bnode, "room_id"));
-			foundchannel = g_list_find_custom(direct_channels, tmpchannel, mm_compare_channels_int);		
+			foundchannel = g_list_find_custom(direct_channels, tmpchannel, mm_compare_channels_by_id_int);		
 			if (!foundchannel) {
 				removenodes = g_list_prepend(removenodes, bnode);
 			}	
@@ -1297,8 +1342,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	}
 	g_list_free(removenodes);
 
-	mm_list_user_prefs(ma, "direct_channel_show", direct_channels);
-	mm_list_user_prefs(ma, "group_channel_show", group_channels);
+	mm_list_user_prefs(ma, "direct_channel_show", direct_channels); //FIXME: do only for first team_id
+	mm_list_user_prefs(ma, "group_channel_show", group_channels); //FIXME: for THIS team_id
 
 	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 
@@ -1307,48 +1352,50 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 	for (j = other_channels; j != NULL; j=j->next) {
 		MattermostChannel *channel = j->data;
-		PurpleChat *chat = purple_blist_find_chat(ma->account, channel->name);
-		gboolean chat_is_new = FALSE;
-                
-		if (!chat) {
-			chat_is_new = TRUE;
-			//TODO components should be updated on existing chat ?
+		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id); 
+ 
+		if (chat == NULL) {
 			GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+
+
 			g_hash_table_insert(defaults, "team_id", g_strdup(channel->team_id));
 			g_hash_table_insert(defaults, "id", g_strdup(channel->id));
-			g_hash_table_insert(defaults, "name", g_strdup(channel->name));							
+			g_hash_table_insert(defaults, "name", g_strconcat(channel->name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, channel->team_id), NULL));							
 			
 			chat = purple_chat_new(ma->account, channel->name, defaults);
 
 			purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "type", channel->type);
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
 
-			purple_chat_set_alias(chat, channel->display_name);
-		}
+			gchar *alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+			purple_chat_set_alias(chat, alias);
 
-		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "type", channel->type);
-		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "room_id", channel->id);
+			if (autojoin) {
+				PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel->id), alias);
+	
+				purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel->id));
+				purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(channel->team_id));
+				purple_conversation_set_data(PURPLE_CONVERSATION(conv), "name", g_strdup(alias));
+				purple_conversation_present(PURPLE_CONVERSATION(conv));
 
-		g_hash_table_replace(ma->group_chats, g_strdup(channel->id), g_strdup(channel->name));
-		g_hash_table_replace(ma->group_chats_rev, g_strdup(channel->name), g_strdup(channel->id));
-                                
-		if (chat_is_new && autojoin) {
-			PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel->id), channel->name ? channel->name : channel->id);
+				MattermostChannel *tmpch = g_new0(MattermostChannel,1);
+				tmpch->id = g_strdup(channel->id);
+				tmpch->name = g_strdup(alias);
+				tmpch->team_id = g_strdup(channel->team_id);
+	
+				mm_join_room(ma, tmpch);
+			}
+			g_free(alias);
 
-			purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel->id));
-			purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(channel->team_id));		
-			purple_conversation_present(PURPLE_CONVERSATION(conv));
-
-			MattermostChannel *tmpch = g_new0(MattermostChannel,1);
-			tmpch->id = g_strdup(channel->id);
-			tmpch->name = g_strdup(channel->name);
-			mm_join_room(ma, g_strdup(channel->team_id), tmpch);
-		}
-		mm_get_history_of_room(ma, team_id, channel->id, ma->last_load_last_message_timestamp);
+		} else {
+			mm_set_group_chat(ma, channel->team_id, channel->name, channel->id);
+			mm_get_history_of_room(ma, channel, ma->last_load_last_message_timestamp);
+		}	
 
 	}
-	g_list_free_full(other_channels,mm_g_free_mattermostchannel);
+	g_list_free_full(other_channels,mm_g_free_mattermost_channel);
 }
 
 static void
@@ -1378,16 +1425,15 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		
 		const gchar *team_id = json_object_get_string_member(team, "id");
 		const gchar *name = json_object_get_string_member(team, "name");
+		const gchar *display_name = json_object_get_string_member(team, "display_name");
 		
 		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(name));
+		g_hash_table_replace(ma->teams_display_names, g_strdup(team_id), g_strdup(display_name));
 		
 		mm_get_open_channels_for_team(ma, team_id);
 	}
-	
 	g_list_free(teams);
-	
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
-
 	// we need team_id for this.
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 	// Update our idleness every 4.5 minutes
@@ -1460,6 +1506,11 @@ mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
         purple_notify_user_info_destroy(user_info);
 
+		// don't add ourselves to buddy list
+		if (purple_buddy_get_name(buddy), ma->self_username) {
+			return;
+		}
+
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "first_name", mm_user->first_name);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "last_name", mm_user->last_name);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "nickname", mm_user->nickname);
@@ -1481,11 +1532,12 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
         PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
         gchar *url;
 
+		// Don't add BOT to buddies
 		// hope no user account/alias ends in [BOT] ... 
 		if (purple_str_has_suffix(username, MATTERMOST_BOT_LABEL)) {
 			PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
 			purple_notify_user_info_add_pair_plaintext(user_info,_("BOT Name"), purple_strreplace(username, MATTERMOST_BOT_LABEL, ""));
-			gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "https://" : "http://", ma->server, "/", g_hash_table_lookup(ma->teams, mm_get_first_team_id(ma)), "/integrations/", NULL);
+			gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "see https://" : "http://", ma->server, "/ -> team -> integrations", NULL); //We do not know which team is the BOT on.
 			purple_notify_user_info_add_pair_plaintext(user_info,_("Information"), info);
 			purple_notify_user_info_add_section_break(user_info);
 			purple_notify_user_info_add_pair_plaintext(user_info, NULL, "Mattermost webhook integration");
@@ -1516,37 +1568,35 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	}
 
 	JsonObject *channel = json_object_get_object_member(response,"channel");
-	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
-	const gchar *team_id = user_data;
 	const gchar *id = json_object_get_string_member(channel, "id");
-	const gchar *name = json_object_get_string_member(channel, "name");
-	const gchar *display_name = json_object_get_string_member(channel, "display_name");
-	const gchar *type = json_object_get_string_member(channel, "type");
 
-	g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
-	g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
+	if (mm_purple_blist_find_chat(ma, id) == NULL) {
 
-	if (!purple_blist_find_chat(ma->account, name)) {
+		const gchar *name = json_object_get_string_member(channel, "name");
+		const gchar *display_name = json_object_get_string_member(channel, "display_name");
+		const gchar *type = json_object_get_string_member(channel, "type");
+		const gchar *team_id = user_data;
+		gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 
 		PurpleChat *chat = NULL;
 		GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
 
 		g_hash_table_insert(defaults, "team_id", g_strdup(team_id));
 		g_hash_table_insert(defaults, "id", g_strdup(id));
-		g_hash_table_insert(defaults, "name", g_strdup(name));
+		g_hash_table_insert(defaults, "name", g_strconcat(name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, team_id), NULL));
 
 		chat = purple_chat_new(ma->account, name, defaults);
 		purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
 
-		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "room_id", id);
-		g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
-		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
+		mm_set_group_chat(ma, team_id, name, id);
 
 		purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
 		purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "type", type);
 
-		purple_chat_set_alias(chat, display_name);
+		gchar *alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+		purple_chat_set_alias(chat, alias);
+		g_free(alias);
 
 		if (autojoin) {
 			//TODO: open conversation window if called to do so (as in mm_add_channels_to_blist()) ?
@@ -1557,16 +1607,9 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 }
 
 static void
-mm_get_channel_by_id(MattermostAccount *ma, const gchar *id)
+mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *id)
 {
 	gchar *url;
-
-	if (id && *id) {
-		return;
-	}
-
-	const gchar *team_id = mm_get_first_team_id(ma);
-
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/",team_id,id); 
 	mm_fetch_url(ma, url, NULL, mm_get_channel_by_id_response, g_strdup(team_id));
 	g_free(url);
@@ -1670,23 +1713,20 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 		return;
 	}
 
-	JsonObject *data = json_object_new();
-	JsonArray *user_ids = json_array_new();
+	JsonArray *data = json_array_new();
 
 	for (i = ids; i; i = i->next) {
 		mm_user = i->data;
-		json_array_add_string_element(user_ids, mm_user->user_id);
+		json_array_add_string_element(data, mm_user->user_id);
 	}
 
-	// How to create unnamed array in json-glib ??
-	json_object_set_array_member(data, "dont-want-name", user_ids);
-	postdata = json_object_to_string(data);
+	postdata = json_array_to_string(data);
 	url = mm_build_url(ma, "/api/v3/users/ids");
 
 	// g_strrstr -> hack to get unnamed array
-	mm_fetch_url(ma, url, g_strrstr(postdata,"["), mm_get_users_by_ids_response, ids);
+	mm_fetch_url(ma, url, postdata, mm_get_users_by_ids_response, ids);
 
-	json_object_unref(data);
+	json_array_unref(data);
 	g_free(postdata);
 	g_free(url);
 }
@@ -1724,6 +1764,29 @@ mm_tooltip_text(PurpleBuddy *buddy, PurpleNotifyUserInfo *user_info, gboolean fu
 	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Last Name"),"last_name",NULL);
 	_MM_TOOLTIP_LINE_ADD(buddy,user_info,_("Email"),"email",NULL);
 
+}
+
+static void
+mm_set_group_chat(MattermostAccount *ma, const gchar *team_id, const gchar *channel_name, const gchar *channel_id)
+{
+	gchar *tmpn = g_strconcat(channel_name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->channel_teams, team_id), NULL);
+
+	g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(tmpn));
+	g_hash_table_replace(ma->group_chats_rev, g_strdup(tmpn), g_strdup(channel_id));
+	g_hash_table_replace(ma->channel_teams, g_strdup(channel_id), g_strdup(team_id));
+
+	g_free(tmpn);
+}
+
+static void
+mm_remove_group_chat(MattermostAccount *ma, const gchar *channel_id)
+{
+	if (!g_hash_table_lookup(ma->group_chats, channel_id)) return;
+
+	g_hash_table_remove(ma->group_chats_rev, g_hash_table_lookup(ma->group_chats, channel_id));
+	g_hash_table_remove(ma->group_chats, channel_id);
+	g_hash_table_remove(ma->channel_teams, channel_id);
+	
 }
 
 static void 
@@ -1882,7 +1945,7 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 							
 							mm_users = g_list_prepend(mm_users, mm_user);
 						} else if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
-							mm_get_channel_by_id(ma, id); //no MM API for muliple
+							mm_get_channel_by_id(ma, channel->team_id, id); //no MM API for muliple
 						}
 					} //TODO: else { ERROR }
 				}
@@ -2114,7 +2177,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	const gchar *channel_type = json_object_get_string_member(data, "channel_type");
 	const gchar *type = json_object_get_string_member(post, "type");
 	const gchar *pending_post_id = json_object_get_string_member(post, "pending_post_id");
-	const gchar *name = g_hash_table_lookup(ma->group_chats, channel_id);
 	JsonObject *props = json_object_get_object_member(post, "props");
 	const gchar *override_username = json_object_get_string_member(props, "override_username");
 	const gchar *from_webhook = json_object_get_string_member(props, "from_webhook");
@@ -2202,49 +2264,30 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					mm_fetch_file_link_for_channel(ma, file_id, channel_id, use_username, timestamp);
 				}
 			}
+
+//FIXME JAREK: dont know the TEAM here
 			
 			if ((channel_type != NULL && *channel_type != MATTERMOST_CHANNEL_DIRECT) || g_hash_table_contains(ma->group_chats, channel_id)) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 				// PurpleChatUser *cb;
-				
-				if (name == NULL) {
-					PurpleChat *chat = purple_blist_find_chat(ma->account, channel_id);
-					
-					name = json_object_get_string_member(data, "channel_name"); // channel_display_name
-					g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(name));
-					g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(channel_id));
-					
-					if (chat != NULL) {
-						GHashTable *defaults = purple_chat_get_components(chat);
-						g_hash_table_insert(defaults, "name", g_strdup(name));
-						
-						//purple_chat_set_alias(chat, display_name); DONT - overrides local alias
+			
+				if (chatconv) {	
+					if (purple_strequal(msg_type, "system_header_change") || purple_strequal(msg_type, "system_purpose_change")) {
+						const gchar *new_header = json_object_get_string_member(props, "new_header");
+						const gchar *new_purpose = json_object_get_string_member(props, "new_purpose");
+						const gchar *new_topic_who = json_object_get_string_member(props, "username");
+						purple_chat_conversation_set_topic(chatconv, new_topic_who, mm_make_topic(new_header, new_purpose, purple_chat_conversation_get_topic(chatconv)));
 					}
-				}
-				if (chatconv == NULL) {
-					chatconv = purple_conversations_find_chat_with_account(name, ma->account);
-				}
-				if (chatconv == NULL) {
-					chatconv = purple_conversations_find_chat_with_account(channel_id, ma->account);
-				}
 				
-				if (purple_strequal(msg_type, "system_header_change") || purple_strequal(msg_type, "system_purpose_change")) {
-					const gchar *new_header = json_object_get_string_member(props, "new_header");
-					const gchar *new_purpose = json_object_get_string_member(props, "new_purpose");
-					const gchar *new_topic_who = json_object_get_string_member(props, "username");
-					
-					purple_chat_conversation_set_topic(chatconv, new_topic_who, mm_make_topic(new_header, new_purpose, purple_chat_conversation_get_topic(chatconv)));
-				}
+					// Group chat message
+					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
+					purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, msg_out, timestamp);
+					g_free(msg_out);
 				
-				// Group chat message
-				gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
-				purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, msg_out, timestamp);
-				g_free(msg_out);
-				
-				if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
-					mm_mark_room_messages_read(ma, channel_id);
-				}
-				
+					if (purple_conversation_has_focus(PURPLE_CONVERSATION(chatconv))) {
+						mm_mark_room_messages_read(ma, channel_id);
+					}
+				} //TODO: else { ERROR } - we have received a group chat message for a chat we dont know about ?
 			} else {
 				if (msg_flags == PURPLE_MESSAGE_RECV) {
 					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
@@ -2479,10 +2522,12 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			JsonObject *post = json_node_get_object(json_parser_get_root(post_parser));
 			const gchar *channel_id = json_object_get_string_member(post, "channel_id");
 			const gchar *user_id =  mm_data_or_broadcast_string("user_id");
-					
+			const gchar *team_id = json_object_get_string_member(post, "team_id");
+			
 			//type system_join_channel, channel_id is ""		
+
 			if (!purple_strequal(channel_id,"") && !g_hash_table_lookup(ma->group_chats, channel_id) && purple_strequal(ma->self_user_id, user_id)) {
-				mm_get_channel_by_id(ma, channel_id);
+				mm_get_channel_by_id(ma, team_id, channel_id); //FIXME: we see no posts until pidgin restart 
 				//TODO: open conversation window (in mm_get_channel_by_id_response()) ?
 			}
 
@@ -2533,19 +2578,22 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		}
 	} else if (purple_strequal(event, "user_added")) {
 		const gchar *user_id = mm_data_or_broadcast_string("user_id");
+		const gchar *team_id = json_object_get_string_member(data, "team_id");
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-		
+
 		if (chatconv != NULL) {
-			purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
+			if (!purple_chat_conversation_has_left(chatconv))
+				purple_chat_conversation_add_user(chatconv, username, NULL, PURPLE_CHAT_USER_NONE, FALSE);
 		} else if (purple_strequal(user_id, ma->self_user_id) && !g_hash_table_contains(ma->group_chats, channel_id)) {
-			mm_get_channel_by_id(ma, channel_id);
+			mm_get_channel_by_id(ma, team_id, channel_id);
 		}
 		
 	} else if (purple_strequal(event, "user_removed")) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		const gchar *user_id = mm_data_or_broadcast_string("user_id");
+
 		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
 		if (chatconv != NULL) {
@@ -2554,12 +2602,12 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 	
 		if (purple_strequal(user_id, ma->self_user_id)) {
 			if (g_hash_table_contains(ma->group_chats, channel_id)) {
-				const gchar *chat_name = g_hash_table_lookup(ma->group_chats, channel_id);
-				PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
+				PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 				if (chat) {
-					//TODO: remove conversation window ? 
-					g_hash_table_remove(ma->group_chats, channel_id);
-					g_hash_table_remove(ma->group_chats_rev, chat_name);
+					PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+					if (chatconv) purple_conv_chat_left(chatconv);
+					mm_remove_group_chat(ma, channel_id);
+					mm_remove_group_chat(ma, channel_id); 
 					purple_blist_remove_chat(chat);
 				}
 			}
@@ -2592,19 +2640,18 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			if (purple_strequal(json_object_get_string_member(object, "category"), "group_channel_show")) {
 				if (purple_strequal(json_object_get_string_member(object, "value"), "false")) {
 					if (g_hash_table_contains(ma->group_chats, id)) {
-						const gchar *chat_name = g_hash_table_lookup(ma->group_chats, id);
-						PurpleChat *chat = purple_blist_find_chat(ma->account, chat_name);
+						PurpleChat *chat = mm_purple_blist_find_chat(ma, id);
 						if (chat) {
 							// don't remove conversation if any: group channel is not destroyed so it is reuseable.
-							g_hash_table_remove(ma->group_chats, id);
-							g_hash_table_remove(ma->group_chats_rev, chat_name);
+							mm_remove_group_chat(ma, id);
 							purple_blist_remove_chat(chat);
 						}
 					}
 				} else {
 					// not efficient: one callback per channel: 
 					// but no API to do it on multiple channels at once ? ... 
-					mm_get_channel_by_id(ma, id);
+					const gchar *team_id = json_object_get_string_member(data, "team_id");
+					mm_get_channel_by_id(ma, team_id, id);
 				}
 			}
 		}
@@ -2612,16 +2659,17 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 		g_list_free(users);
 	} else if (purple_strequal(event, "channel_created") && purple_strequal(mm_data_or_broadcast_string("user_id"), ma->self_user_id)) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
-		mm_get_channel_by_id(ma, channel_id);
+		const gchar *team_id = json_object_get_string_member(data, "team_id");
+		mm_get_channel_by_id(ma, team_id, channel_id);
 		//TODO: add to blist chats
 	} else if (purple_strequal(event, "channel_deleted")) {
 		const gchar *channel_id = mm_data_or_broadcast_string("channel_id");
 		if (g_hash_table_contains(ma->group_chats, channel_id)) {
-			const gchar *channel_name = g_hash_table_lookup(ma->group_chats, channel_id);
-			PurpleChat *chat = purple_blist_find_chat(ma->account, channel_name);
+			PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 			if (chat) {
-				g_hash_table_remove(ma->group_chats, channel_id);
-				g_hash_table_remove(ma->group_chats_rev, channel_name);
+				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+				if (chatconv) purple_conv_chat_left(chatconv);
+				mm_remove_group_chat(ma, channel_id);
 				purple_blist_remove_chat(chat);
 			}
 		}
@@ -2669,7 +2717,7 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	const gchar *team_id = mmtrl->team_id;
 	const gchar *team_name;
 	
-	team_name = g_strconcat(g_hash_table_lookup(ma->teams, team_id), " ", mmtrl->team_desc, NULL);
+	team_name = g_strconcat(g_hash_table_lookup(ma->teams_display_names, team_id), " ", mmtrl->team_desc, NULL);
 	
 	team_category = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_CATEGORY, team_name, NULL);
 	purple_roomlist_room_add_field(roomlist, team_category, team_id);
@@ -2688,6 +2736,9 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		const gchar *name = json_object_get_string_member(channel, "name");
 		const gchar *header = json_object_get_string_member(channel, "header");
 		const gchar *purpose = json_object_get_string_member(channel, "purpose");
+		const gchar *team_id = json_object_get_string_member(channel, "team_id");
+		const gchar *team_name = g_hash_table_lookup(ma->teams, team_id);
+
 		PurpleRoomlistRoom *room;
 		const gchar *type_str;
 		gchar *tmp_h = strlen(header) > _MAX_COLS ? g_strdup_printf("%.*s...", _MAX_COLS-3, header) : NULL;
@@ -2703,6 +2754,9 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		room = purple_roomlist_room_new(PURPLE_ROOMLIST_ROOMTYPE_ROOM, name, team_category);
 		
 		purple_roomlist_room_add_field(roomlist, room, id);
+		purple_roomlist_room_add_field(roomlist, room, team_id);
+		purple_roomlist_room_add_field(roomlist, room, team_name);
+		purple_roomlist_room_add_field(roomlist, room, name);
 		purple_roomlist_room_add_field(roomlist, room, display_name);
 		purple_roomlist_room_add_field(roomlist, room, type_str);
 		purple_roomlist_room_add_field(roomlist, room, tmp_h ? tmp_h : header);
@@ -2710,8 +2764,7 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 		purple_roomlist_room_add(roomlist, room);
 		
-		g_hash_table_replace(ma->group_chats, g_strdup(id), g_strdup(name));
-		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), g_strdup(id));
+		mm_set_group_chat(ma, team_id, name, id);
 		
 		g_hash_table_replace(ma->channel_teams, g_strdup(id), g_strdup(team_id));
 
@@ -2736,14 +2789,14 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 static gchar *
 mm_roomlist_serialize(PurpleRoomlistRoom *room) {
 	GList *fields = purple_roomlist_room_get_fields(room);
-	const gchar *id = (const gchar *) fields->data;
-	const gchar *name = (const gchar *) fields->next->data;
+
+	const gchar *id = g_list_nth_data(fields, 0);
+	const gchar *team_id = g_list_nth_data(fields, 1);
+	const gchar *team_name = g_list_nth_data(fields, 2);
+	const gchar *name = g_list_nth_data(fields, 3);
 	
-	PurpleRoomlistRoom *team_category = purple_roomlist_room_get_parent(room);
-	GList *team_fields = purple_roomlist_room_get_fields(team_category);
-	const gchar *team_id = (const gchar *) team_fields->data;
-	
-	return g_strconcat(team_id, "/", id, "/", name, NULL);
+	//TODO: add alias ?
+	return g_strconcat(team_id, "^", id, "^", name, MATTERMOST_CHANNEL_SEPARATOR, team_name, NULL); //FIXME: need proper separator - unique !
 }
 
 //roomlist_deserialize
@@ -2754,7 +2807,7 @@ mm_chat_info_defaults(PurpleConnection *pc, const char *chatname)
 	
 	if (chatname != NULL)
 	{
-		gchar **chat_parts = g_strsplit_set(chatname, "/", 3);
+		gchar **chat_parts = g_strsplit_set(chatname, "^", 3); //FIXME: need proper separator - unique !
 		
 		if (chat_parts[0]) {
 			g_hash_table_insert(defaults, "team_id", g_strdup(chat_parts[0]));
@@ -2765,7 +2818,7 @@ mm_chat_info_defaults(PurpleConnection *pc, const char *chatname)
 				}
 			}
 		}
-		
+		//TODO: add alias ?
 		g_strfreev(chat_parts);
 	} else {
 		g_hash_table_insert(defaults, "team_id", g_strdup(mm_get_first_team_id(purple_connection_get_protocol_data(pc))));
@@ -2787,6 +2840,15 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	roomlist = purple_roomlist_new(ma->account);
 
 	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("ID"), "id", TRUE);
+	fields = g_list_append(fields, f);
+
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Team ID"), "team_id", TRUE);
+	fields = g_list_append(fields, f);
+
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Team Name"), "team_name", TRUE);
+	fields = g_list_append(fields, f);
+
+	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Name"), "name", TRUE);
 	fields = g_list_append(fields, f);
 
 	f = purple_roomlist_field_new(PURPLE_ROOMLIST_FIELD_STRING, _("Display Name"), "display_name", FALSE);
@@ -2813,7 +2875,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has already joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
-		mmtrl->team_desc = g_strdup(_("Joined channels"));
+		mmtrl->team_desc = g_strdup(_(": Joined channels"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/", team_id);
@@ -2826,7 +2888,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
-		mmtrl->team_desc = g_strdup(_("More channels"));
+		mmtrl->team_desc = g_strdup(_(": More channels"));
 		mmtrl->roomlist = roomlist;
 		
 		url = mm_build_url(ma, "/api/v3/teams/%s/channels/more/0/9999", team_id);
@@ -2923,40 +2985,18 @@ mm_build_groups_from_blist(MattermostAccount *ma)
 	     node != NULL;
 		 node = purple_blist_node_next(node, TRUE)) {
 		if (PURPLE_IS_CHAT(node)) {
-			const gchar *room_id;
-			const gchar *team_id;
-			const gchar *name;
 			PurpleChat *chat = PURPLE_CHAT(node);
+
 			if (purple_chat_get_account(chat) != ma->account) {
 				continue;
 			}
 			
-			name = purple_chat_get_name(chat);
-			room_id = purple_blist_node_get_string(node, "room_id");
-			team_id = purple_blist_node_get_string(node, "team_id");
-			if (name == NULL || room_id == NULL || team_id == NULL || purple_strequal(name, room_id)) {
-				GHashTable *components = purple_chat_get_components(chat);
-				if (components != NULL) {
-					if (room_id == NULL) {
-						room_id = g_hash_table_lookup(components, "id");
-					}
-					if (name == NULL || purple_strequal(name, room_id)) {
-						name = g_hash_table_lookup(components, "name");
-					}
-					if (team_id == NULL) {
-						team_id = g_hash_table_lookup(components, "team_id");
-					}
-				}
-			}
-			if (room_id != NULL) {
-				g_hash_table_replace(ma->group_chats, g_strdup(room_id), name ? g_strdup(name) : NULL);
-			}
-			if (name != NULL) {
-				g_hash_table_replace(ma->group_chats_rev, g_strdup(name), room_id ? g_strdup(room_id) : NULL);
-			}
-			if (team_id != NULL) {
-				g_hash_table_replace(ma->channel_teams, g_strdup(room_id), g_strdup(team_id));
-			}
+			GHashTable *components = purple_chat_get_components(chat);
+
+			if (components != NULL) {
+				mm_set_group_chat(ma, g_hash_table_lookup(components, "team_id") , g_hash_table_lookup(components, "name"), g_hash_table_lookup(components, "id"));
+			} //TODO: else { ERROR }
+
 		} else if (PURPLE_IS_BUDDY(node)) {
 			const gchar *room_id;
 			const gchar *user_id;
@@ -3032,6 +3072,7 @@ mm_login(PurpleAccount *account)
 	ma->usernames_to_ids = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->ids_to_usernames = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->teams = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	ma->teams_display_names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->channel_teams = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->received_message_queue = g_queue_new();
 	
@@ -3126,6 +3167,8 @@ mm_close(PurpleConnection *pc)
 	g_hash_table_unref(ma->ids_to_usernames);
 	g_hash_table_remove_all(ma->teams);
 	g_hash_table_unref(ma->teams);
+	g_hash_table_remove_all(ma->teams_display_names);
+	g_hash_table_unref(ma->teams_display_names);
 	g_hash_table_remove_all(ma->channel_teams);
 	g_hash_table_unref(ma->channel_teams);
 	g_queue_free(ma->received_message_queue);
@@ -3701,15 +3744,10 @@ mm_get_chat_name(GHashTable *data)
 static void 
 mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	gchar *channel_id = user_data;
-	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+	MattermostChannel *channel = user_data;
+	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 	JsonObject *obj = json_node_get_object(node);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
-	gboolean found_myself = FALSE;
-
-	if (chatconv != NULL) {
-		found_myself = purple_chat_conversation_has_user(chatconv, ma->self_username);
-	}
 
 	if (json_object_get_int_member(obj, "status_code") >= 400) {
 		purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
@@ -3728,16 +3766,11 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			const gchar *username = json_object_get_string_member(user, "username");
 			const gchar *roles = json_object_get_string_member(user, "roles");
 
-			if (!found_myself && purple_strequal(ma->self_username, username)) {
-				found_myself = TRUE;
-				continue;
-			}
-
 			if (!g_hash_table_contains(ma->ids_to_usernames, user_id)) {
 				g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
 				g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
 				
-				if (chatconv == NULL && g_hash_table_contains(ma->one_to_ones, channel_id)) {
+				if (chatconv == NULL && g_hash_table_contains(ma->one_to_ones, channel->id)) {
 					//Probably a direct message, add them to the buddy list
 					PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
 					if (buddy == NULL) {
@@ -3752,7 +3785,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 						mm_add_buddy(ma->pc, buddy, NULL, NULL);
 					}
 					
-					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", channel_id);
+					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", channel->id);
 				}
 			}
 			
@@ -3776,24 +3809,18 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
 	if (ma->last_load_last_message_timestamp > 0) {
-		// Fetch offline history
-		mm_get_history_of_room(ma, NULL, channel_id, -1);
+		mm_get_history_of_room(ma, channel, -1);
 	}
 	
-	g_free(channel_id);
+	mm_g_free_mattermost_channel(channel);
 }
 
 static void
-mm_get_users_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id)
+mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 {
 	gchar *url;
-
-	if (team_id == NULL) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
-	
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/users/0/9999", team_id, channel_id);
-	mm_fetch_url(ma, url, NULL, mm_got_users_of_room, g_strdup(channel_id));
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/users/0/9999", channel->team_id, channel->id);
+	mm_fetch_url(ma, url, NULL, mm_got_users_of_room, channel);
 	g_free(url);
 }
 
@@ -3838,13 +3865,8 @@ mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id)
 	PurpleBlistNode *blistnode = NULL;
 	
 	if (g_hash_table_contains(ma->group_chats, room_id)) {
-		//twas a group chat
-		blistnode = PURPLE_BLIST_NODE(purple_blist_find_chat(ma->account, g_hash_table_lookup(ma->group_chats, room_id)));
-		if (blistnode == NULL) {
-			blistnode = PURPLE_BLIST_NODE(purple_blist_find_chat(ma->account, room_id));
-		}
+		blistnode = PURPLE_BLIST_NODE(mm_purple_blist_find_chat(ma, room_id));
 	} else {
-		//is a direct message
 		blistnode = PURPLE_BLIST_NODE(purple_blist_find_buddy(ma->account, g_hash_table_lookup(ma->one_to_ones, room_id)));
 	}
 	if (blistnode != NULL) {
@@ -3869,20 +3891,16 @@ mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id)
 }
 
 static void
-mm_get_history_of_room(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, gint64 since)
+mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since)
 {
 	gchar *url;
-
-	if (team_id == NULL) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
 	
 	if (since < 0) {
-		since = mm_get_room_last_timestamp(ma, channel_id);
+		since = mm_get_room_last_timestamp(ma, channel->id);
 	}
 	
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/posts/since/%" G_GINT64_FORMAT, team_id, channel_id, since);
-	mm_fetch_url(ma, url, NULL, mm_got_history_of_room, g_strdup(channel_id));
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/posts/since/%" G_GINT64_FORMAT, channel->team_id, channel->id, since);
+	mm_fetch_url(ma, url, NULL, mm_got_history_of_room, channel);
 	g_free(url);
 }
 
@@ -3897,13 +3915,8 @@ mm_set_room_last_timestamp(MattermostAccount *ma, const gchar *room_id, gint64 l
 	}
 	
 	if (g_hash_table_contains(ma->group_chats, room_id)) {
-		//twas a group chat
-		blistnode = PURPLE_BLIST_NODE(purple_blist_find_chat(ma->account, g_hash_table_lookup(ma->group_chats, room_id)));
-		if (blistnode == NULL) {
-			blistnode = PURPLE_BLIST_NODE(purple_blist_find_chat(ma->account, room_id));
-		}
+		blistnode = PURPLE_BLIST_NODE(mm_purple_blist_find_chat(ma, room_id));
 	} else {
-		//is a direct message
 		blistnode = PURPLE_BLIST_NODE(purple_blist_find_buddy(ma->account, g_hash_table_lookup(ma->one_to_ones, room_id)));
 	}
 	if (blistnode != NULL) {
@@ -3927,46 +3940,43 @@ static void
 mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *obj = json_node_get_object(node);
-	gchar *channel_id = user_data;
+	MattermostChannel *channel = user_data;
+
+	//TODO: errors display
 	
 	if (!json_object_has_member(obj, "status_code")) {
-		JsonObject *channel = json_object_get_object_member(obj, "channel");
-		const gchar *channel_name = json_object_get_string_member(channel, "name"); //display_name
-		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-		
-		if (!g_hash_table_contains(ma->group_chats, channel_id)) {
-			g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(channel_name));
-			g_hash_table_replace(ma->group_chats_rev, g_strdup(channel_name), g_strdup(channel_id));
-		}
-		
+		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 		if (chatconv != NULL) {
-			const gchar *header = json_object_get_string_member(channel, "header");
-			const gchar *purpose = json_object_get_string_member(channel, "purpose");
+			JsonObject *tmpch = json_object_get_object_member(obj, "channel");
+			const gchar *header = json_object_get_string_member(tmpch, "header");
+			const gchar *purpose = json_object_get_string_member(tmpch, "purpose");
 			purple_chat_conversation_set_topic(chatconv, NULL, mm_make_topic(header, purpose, purple_chat_conversation_get_topic(chatconv)));
 			//BUG: pidgin 2 does not resize conv window field
 			//should be called before purple_conversation_present();	
 		}
 	}
 	
-	g_free(channel_id);
+	mm_get_users_of_room(ma, channel);
 }
 
 static void
 mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	//TODO: check if join succeeded 
 	gchar *url;
 	MattermostChannel *channel = user_data;
-	const gchar *team_id = g_hash_table_lookup(ma->channel_teams, channel->id);
+	JsonObject *obj = json_node_get_object(node);
 
-	if (team_id == NULL) {
-		team_id = mm_get_first_team_id(ma);
+	if (json_object_get_int_member(obj, "status_code") >= 400) {
+		purple_notify_error(ma->pc, "Error", "Error joining channel", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
+		if (chatconv) purple_conv_chat_left(chatconv);
+		return;
 	}
 
-	if (!purple_blist_find_chat(ma->account, channel->name)) {
-		mm_get_channel_by_id(ma, channel->id);
+	if (!mm_purple_blist_find_chat(ma, channel->id)) {
+		mm_get_channel_by_id(ma, channel->team_id, channel->id);
 	}
-	
+
 	if (purple_strequal(channel->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT))) {
 		MattermostUserPref *pref = g_new0(MattermostUserPref, 1);
 		pref->user_id = g_strdup(ma->self_user_id);
@@ -3976,27 +3986,17 @@ mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		mm_save_user_pref(ma, pref);
 	}	
 
-	mm_get_users_of_room(ma, team_id, channel->id);
-
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/", team_id, channel->id);
-	mm_fetch_url(ma, url, NULL, mm_got_room_info, g_strdup(channel->id));
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/", channel->team_id, channel->id);
+	mm_fetch_url(ma, url, NULL, mm_got_room_info, channel);
 	g_free(url);
-	g_free(channel->id);
-	g_free(channel->name);
-	g_free(channel);
 }
 
 
 static void 
-mm_join_room(MattermostAccount *ma, const gchar *team_id, MattermostChannel *channel)
+mm_join_room(MattermostAccount *ma, MattermostChannel *channel)
 {
 	gchar *url;
-
-	if (team_id == NULL) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel->id);
-	}
-
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/join", team_id, channel->id);
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/%s/join", channel->team_id, channel->id);
 	mm_fetch_url(ma, url, "{}", mm_join_room_response, channel);
 	g_free(url);
 }
@@ -4005,69 +4005,30 @@ static void
 mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-	const gchar *id;
-	const gchar *name;
-	const gchar *team_id;
-	PurpleChatConversation *chatconv = NULL;
+	const gchar *id = g_hash_table_lookup(chatdata, "id");
+	const gchar *name = g_hash_table_lookup(chatdata, "name");
+	const gchar *team_id = g_hash_table_lookup(chatdata, "team_id");
+	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(id));
 	
-	id = g_hash_table_lookup(chatdata, "id");
-	name = g_hash_table_lookup(chatdata, "name");
-	team_id = g_hash_table_lookup(chatdata, "team_id");
-	
-	if (id == NULL && name == NULL) {
-		//What do?
-		return;
-	}
-	
-	if (id == NULL) {
-		id = g_hash_table_lookup(ma->group_chats_rev, name);
-	}
-	//TODO use the api look up name info from the id
-	if (id == NULL) {
-		return;
-	}
-	
-	if (name == NULL) {
-		name = g_hash_table_lookup(ma->group_chats, id);
-	}
-	if (team_id == NULL) {
-		team_id = g_hash_table_lookup(ma->channel_teams, id);
-	}
-	
-	if (name != NULL) {
-		chatconv = purple_conversations_find_chat_with_account(name, ma->account);
-	}
-	if (chatconv == NULL) {
-		chatconv = purple_conversations_find_chat_with_account(id, ma->account);
-	}
 	if (chatconv != NULL && !purple_chat_conversation_has_left(chatconv)) {
 		purple_conversation_present(PURPLE_CONVERSATION(chatconv));
 		return;
 	}
 	
-	chatconv = purple_serv_got_joined_chat(pc, g_str_hash(id), name ? name : id);
+	mm_set_group_chat(ma, team_id, name, id); 
+
+	chatconv = purple_serv_got_joined_chat(pc, g_str_hash(id), name);
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
-	
-	if (team_id != NULL) {
-		purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
-	}
-	
+	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
+	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "name", g_strdup(name));
 	purple_conversation_present(PURPLE_CONVERSATION(chatconv));
-	
-	if (!g_hash_table_contains(ma->group_chats, id)) {
-		g_hash_table_replace(ma->group_chats, g_strdup(id), name ? g_strdup(name) : NULL);
-	}
-	if (name != NULL && !g_hash_table_contains(ma->group_chats_rev, name)) {
-		g_hash_table_replace(ma->group_chats_rev, g_strdup(name), id ? g_strdup(id) : NULL);
-	}
-	if (team_id != NULL && !g_hash_table_contains(ma->channel_teams, id)) {
-		g_hash_table_replace(ma->channel_teams, g_strdup(id), g_strdup(team_id));
-	}
 	
 	MattermostChannel *channel = g_new0(MattermostChannel,1);
 	channel->name = g_strdup(name);
 	channel->id = g_strdup(id);
-	mm_join_room(ma, team_id, channel);
+	channel->team_id = g_strdup(team_id);
+
+	mm_join_room(ma, channel);
 }
 
 static gboolean
@@ -4084,11 +4045,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 		team_id = g_hash_table_lookup(ma->channel_teams, room_id);
 	}
 	
-	if (!team_id || !*team_id) {
-		team_id = mm_get_first_team_id(ma);
-	}
-	
-	if (!team_id || !*team_id) {
+	if (!team_id || !*team_id || !room_id || !*room_id) {
 		return FALSE;
 	}
 	
@@ -4098,7 +4055,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 	postdata = json_object_to_string(obj);
 	
 	url = mm_build_url(ma, "/api/v3/teams/%s/channels/view", team_id);
-	mm_fetch_url(ma, url, postdata, NULL, NULL);
+	mm_fetch_url(ma, url, postdata, NULL, NULL);	//TODO: check error
 	
 	g_free(postdata);
 	g_free(url);
@@ -4140,29 +4097,26 @@ mm_mark_conv_seen(PurpleConversation *conv, PurpleConversationUpdateType type)
 	ma = purple_connection_get_protocol_data(pc);
 	
 	room_id = purple_conversation_get_data(conv, "id");
-	if (room_id == NULL) {
-		if (PURPLE_IS_IM_CONVERSATION(conv)) {
-			room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
-			// new conversation: selecting IM in chat room people list on a non-buddy
-			if (room_id == NULL) {
-				// name of a new IM conv. == buddy username: better way to do it ?
-				const gchar *username = purple_conversation_get_name(conv);
-				PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
-				if (buddy == NULL) {
-					buddy = purple_buddy_new(ma->account, username, NULL);
-					purple_blist_add_buddy(buddy, NULL, mm_get_or_create_default_group(), NULL);
-					mm_add_buddy(pc, buddy, NULL, NULL);
-				}
-				return;
+
+	if (PURPLE_IS_IM_CONVERSATION(conv)) {
+		room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
+		// new conversation: selecting IM in chat room people list on a non-buddy
+		if (room_id == NULL) {
+			// name of a new IM conv. == buddy username: better way to do it ?
+			const gchar *username = purple_conversation_get_name(conv);
+			PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
+			if (buddy == NULL) {
+				buddy = purple_buddy_new(ma->account, username, NULL);
+				purple_blist_add_buddy(buddy, NULL, mm_get_or_create_default_group(), NULL);
+				mm_add_buddy(pc, buddy, NULL, NULL);
 			}
-		} else {
-			room_id = purple_conversation_get_name(conv);
-			if (g_hash_table_lookup(ma->group_chats_rev, room_id)) {
-				// Convert friendly name into id
-				room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);
-			}
+			return;
 		}
+	} else {
+//FIXME	room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);
+		//TODO:  if (room_id) == NULL - create new group chat 
 	}
+
 	g_return_if_fail(room_id != NULL);
 	
 	mm_mark_room_messages_read(ma, room_id);
@@ -4193,18 +4147,14 @@ mm_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, Matterm
 	}
 	
 	room_id = purple_conversation_get_data(conv, "id");
-	if (room_id == NULL) {
-		if (PURPLE_IS_IM_CONVERSATION(conv)) {
-			room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
-		} else {
-			room_id = purple_conversation_get_name(conv);
-			if (g_hash_table_lookup(ma->group_chats_rev, room_id)) {
-				// Convert friendly name into id
-				room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);
-			}
-		}
+
+	if (PURPLE_IS_IM_CONVERSATION(conv)) {
+		room_id = g_hash_table_lookup(ma->one_to_ones_rev, purple_conversation_get_name(conv));
+	} else {
+		room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);		
 	}
-	g_return_val_if_fail(room_id, -1); //TODO create new conversation for this new person
+
+	g_return_val_if_fail(room_id, -1); // this can happen if we try to type in a removed chat for which conv still exists ?
 	
 	
 	
@@ -4212,7 +4162,7 @@ mm_conv_send_typing(PurpleConversation *conv, PurpleIMTypingState state, Matterm
 	data_inside = json_object_new();
 	
 	json_object_set_string_member(data_inside, "channel_id", room_id);
-	json_object_set_string_member(data_inside, "parent_id", ""); //TODO what is this?
+	json_object_set_string_member(data_inside, "parent_id", ""); //TODO what is this? (a reply to a post ?)
 		
 	json_object_set_string_member(data, "action", "user_typing");
 	json_object_set_object_member(data, "data", data_inside);
@@ -4287,37 +4237,18 @@ PurpleMessage *msg)
 const gchar *message, PurpleMessageFlags flags)
 {
 #endif
-	
-	MattermostAccount *ma;
-	const gchar *room_id;
-	PurpleChatConversation *chatconv;
-	gint ret;
-	const gchar *team_id;
-	
-	ma = purple_connection_get_protocol_data(pc);
-	chatconv = purple_conversations_find_chat(pc, id);
-	room_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "id");
-	if (!room_id) {
-		// Fix for a race condition around the chat data and serv_got_joined_chat()
-		room_id = purple_conversation_get_name(PURPLE_CONVERSATION(chatconv));
-		if (g_hash_table_lookup(ma->group_chats_rev, room_id)) {
-			// Convert friendly name into id
-			room_id = g_hash_table_lookup(ma->group_chats_rev, room_id);
-		}
-		g_return_val_if_fail(room_id, -1);
-	}
-	g_return_val_if_fail(g_hash_table_contains(ma->group_chats, room_id), -1); //TODO rejoin room?
-	
-	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
-	if (!team_id) {
-		team_id = g_hash_table_lookup(ma->channel_teams, room_id);
-	}
-	if (!team_id) {
-		//Uh oh!
-		team_id = mm_get_first_team_id(ma);
-	}
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	PurpleChatConversation *chatconv = purple_conversations_find_chat(pc, id);
+	const gchar *room_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "id");
+	const gchar *team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
+	gint ret = 0;
+
+	// this should not happen.
+	g_return_val_if_fail(room_id, -1);
+	g_return_val_if_fail(team_id, -1);
 	
 	ret = mm_conversation_send_message(ma, team_id, room_id, message);
+
 	if (ret > 0) {
 		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self_username, PURPLE_MESSAGE_SEND, message, time(NULL));
 	}
@@ -4359,7 +4290,7 @@ mm_created_direct_message_send(MattermostAccount *ma, JsonNode *node, gpointer u
 	if (buddy != NULL) {
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "room_id", room_id);
 	}
-	
+	//API: user is MM global, still need a team_id to contact, why ? ..
 	mm_conversation_send_message(ma, mm_get_first_team_id(ma), room_id, message);
 }
 
@@ -4377,15 +4308,23 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 	gchar *room_id = g_hash_table_lookup(ma->one_to_ones_rev, who);
-	const gchar *team_id = mm_get_first_team_id(ma);
+
+	//API: user is MM global, still need team_id to contact, why ? ..
+	const gchar *team_id = mm_get_first_team_id(ma); 
 	
 	if (room_id == NULL) {
 
 		if (purple_str_has_suffix(who, MATTERMOST_BOT_LABEL)) {
 			purple_notify_error(ma->pc, "Error", "You cannot send instant message to a BOT", "(However you may be able to interact with it using \"/cmd command\" in a chat)", purple_request_cpar_from_connection(ma->pc));
-			//TODO: remove conversation (segfaults in libpurple 2 if called here) 
-			return 0;
+			//TODO: 'disable' im conv window ?
+			return -1;
 		}
+
+		if (purple_strequal(who, ma->self_username)) {
+			purple_notify_error(ma->pc, "Error", "You cannot send instant message to yourself", "", purple_request_cpar_from_connection(ma->pc));
+			//TODO: 'disable' im conv window ? 
+			return -1;
+		}	
 
 		JsonObject *data;
 		gchar *url, *postdata;
@@ -4414,10 +4353,8 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 
 		mm_save_user_pref(ma, pref);
 		// free pref in callback
-
 		return 1;
 	}
-	
 	return mm_conversation_send_message(ma, team_id, room_id, message);
 }
 
@@ -4434,22 +4371,10 @@ mm_chat_set_header_purpose(PurpleConnection *pc, int id, const char *topic, cons
 	const gchar *team_id, *channel_id;
 	
 	chatconv = purple_conversations_find_chat(pc, id);
-	if (chatconv == NULL) {
-		return;
-	}
+	if (chatconv == NULL) return;
 	
 	channel_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "id");
-	if (channel_id == NULL) {
-		channel_id = purple_conversation_get_name(PURPLE_CONVERSATION(chatconv));
-	}
 	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
-	if (!team_id) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
-	if (!team_id) {
-		//Uh oh!
-		team_id = mm_get_first_team_id(ma);
-	}
 	
 	data = json_object_new();
 	json_object_set_string_member(data, "channel_id", channel_id);
@@ -4514,10 +4439,7 @@ mm_search_results_add_buddy(PurpleConnection *pc, GList *row, void *user_data)
 	if (!purple_blist_find_buddy(account, user->username)) {
 		purple_blist_request_add_buddy(account, user->username, MATTERMOST_DEFAULT_BLIST_GROUP_NAME, alias); //NO room_id
 	} 
-/*else if (alias) {
-		purple_serv_got_alias(pc, user->username, alias);
-	}
-*/
+
 	mm_g_free_mattermost_user(user);
     g_free(alias);
 }
@@ -4702,7 +4624,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	
 	full_name = g_strconcat(first_name ? first_name : "", (first_name && *first_name) ? " " : "", last_name, NULL);
 	if (*full_name) {
-		purple_serv_got_alias(ma->pc, username, full_name);
+//		purple_serv_got_alias(ma->pc, username, full_name);
 	}
 	g_free(full_name);
 }
@@ -4807,7 +4729,10 @@ mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy)
 	json_object_set_string_member(data, "user_id", user_id);
 	postdata = json_object_to_string(data);
 
-	url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", mm_get_first_team_id(ma));
+	url = mm_build_url(ma, "/api/v3/teams/%s/channels/create_direct", mm_get_first_team_id(ma)); 
+	//FIXME:is this buddy on that team ? 
+	//		We need to get info about user first
+	//		but still on which team are we on now ?
 
 	mm_fetch_url(ma, url, postdata, mm_create_direct_channel_response, g_strdup(user_id));
 	
@@ -4821,6 +4746,16 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 	const gchar *buddy_name = purple_buddy_get_name(buddy);
 	const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, buddy_name);
 	
+	if (purple_strequal(user_id,ma->self_user_id)) {
+		purple_blist_remove_buddy(buddy);	
+		return;
+	}
+
+	if (purple_str_has_suffix(buddy_name, MATTERMOST_BOT_LABEL)) {
+		purple_blist_remove_buddy(buddy);
+		return;
+	}
+
 	if (user_id == NULL) {
 		gchar *url;
 		
