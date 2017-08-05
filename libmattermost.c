@@ -1723,7 +1723,6 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 	postdata = json_array_to_string(data);
 	url = mm_build_url(ma, "/api/v3/users/ids");
 
-	// g_strrstr -> hack to get unnamed array
 	mm_fetch_url(ma, url, postdata, mm_get_users_by_ids_response, ids);
 
 	json_array_unref(data);
