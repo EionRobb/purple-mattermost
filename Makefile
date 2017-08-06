@@ -32,7 +32,6 @@ ifeq ($(OS),Windows_NT)
 else
 
   UNAME_S := $(shell uname -s)
-
   #.. There are special flags we need for OSX
   ifeq ($(UNAME_S), Darwin)
     #
@@ -41,11 +40,15 @@ else
     #   so things should "just work".  You *must* make sure your packages are
     #   all up to date or you will most likely get compilation errors.
     #
-    INCLUDES = -I/opt/local/include -lz $(OS)
+    CFLAGS += -I/opt/local/include 
+	# gcc does not support relro
+    LDFLAGS = -lz $(OS)
 
     CC = gcc
+    CPP = cpp
   else
     CC ?= gcc
+    CPP ?= cpp
   endif
 
   ifeq ($(shell $(PKG_CONFIG) --exists purple-3 2>/dev/null && echo "true"),)
@@ -68,6 +71,11 @@ else
     MATTERMOST_TARGET = FAILNOLIBS
   endif
 
+  # no pkg-config for libmarkdown, just try if header is on include path.
+  ifeq ($(shell echo "" | $(CPP) $(CFLAGS) -include mkdio.h - -o /dev/null 2>/dev/null && echo "true"),)
+    MATTERMOST_TARGET = FAILNODISCOUNT
+  endif
+
 endif
 
 WIN32_CFLAGS = -I$(WIN32_DEV_TOP)/glib-2.28.8/include -I$(WIN32_DEV_TOP)/glib-2.28.8/include/glib-2.0 -I$(WIN32_DEV_TOP)/glib-2.28.8/lib/glib-2.0/include -I$(WIN32_DEV_TOP)/json-glib-0.14/include/json-glib-1.0 -I$(WIN32_DEV_TOP)/discount-2.2.1 -DENABLE_NLS -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"' -Wall -Wextra -Werror -Wno-deprecated-declarations -Wno-unused-parameter -fno-strict-aliasing -Wformat
@@ -83,15 +91,15 @@ PURPLE_C_FILES := libmattermost.c $(C_FILES)
 
 
 
-.PHONY:	all install FAILNOPURPLE FAILNOLIBS clean install-icons installer
+.PHONY:	all install FAILNOPURPLE FAILNOLIBS FAILNODISCOUNT clean install-icons installer
 
 all: $(MATTERMOST_TARGET)
 
 libmattermost.so: $(PURPLE_C_FILES) $(PURPLE_COMPAT_FILES)
-	$(CC) -fPIC $(CFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple glib-2.0 json-glib-1.0 --libs --cflags`  $(INCLUDES) -Ipurple2compat -g -ggdb -lmarkdown
+	$(CC) -fPIC $(CFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple glib-2.0 json-glib-1.0 --libs --cflags` -Ipurple2compat -g -ggdb -lmarkdown
 
 libmattermost3.so: $(PURPLE_C_FILES)
-	$(CC) -fPIC $(CFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple-3 glib-2.0 json-glib-1.0 --libs --cflags` $(INCLUDES)  -g -ggdb -lmarkdown
+	$(CC) -fPIC $(CFLAGS) -shared -o $@ $^ $(LDFLAGS) `$(PKG_CONFIG) purple-3 glib-2.0 json-glib-1.0 --libs --cflags` -g -ggdb -lmarkdown
 
 libmattermost.dll: $(PURPLE_C_FILES) $(PURPLE_COMPAT_FILES)
 	$(WIN32_CC) -O0 -g -ggdb -shared -o $@ $^ $(WIN32_PIDGIN2_CFLAGS) $(WIN32_PIDGIN2_LDFLAGS) -Ipurple2compat
@@ -127,6 +135,9 @@ FAILNOPURPLE:
 
 FAILNOLIBS:
 	@echo "Error: You need GLib 2 and JSON-GLib development headers installed to be able to compile this plugin"
+
+FAILNODISCOUNT:
+	@echo "Error: You need libmarkdown (discount) development headers installed to be able to compile this plugin"
 
 clean:
 	rm -f $(MATTERMOST_TARGET) 
