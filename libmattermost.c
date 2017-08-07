@@ -1485,7 +1485,7 @@ mm_about_myself(PurpleProtocolAction *action)
 	GList *i;
 
 	for (i = ma->mention_words; i != NULL; i=i->next) {
-		 g_string_append(mention_keys,g_strdup(i->data));
+		 g_string_append(mention_keys,i->data);
 		 g_string_append(mention_keys,",");
 	}
 
@@ -2074,11 +2074,11 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonObject *notify_props = json_object_get_object_member(response, "notify_props");
 
 	if (purple_strequal(json_object_get_string_member(notify_props, "all"), "true")) {
-		ma->mention_words = g_list_prepend(ma->mention_words,g_strconcat("@","all",NULL));
+		ma->mention_words = g_list_prepend(ma->mention_words,"@all");
 	}
 
 	if (purple_strequal(json_object_get_string_member(notify_props, "channel"), "true")) {
-		ma->mention_words = g_list_prepend(ma->mention_words,g_strconcat("@","channel",NULL));
+		ma->mention_words = g_list_prepend(ma->mention_words,"@channel");
 	}
 
 	if (purple_strequal(json_object_get_string_member(notify_props, "first_name"), "true")) {
