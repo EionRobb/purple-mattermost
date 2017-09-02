@@ -3453,6 +3453,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 			g_free(ma->frame); ma->frame = NULL;
 			ma->packet_code = 0;
 			ma->frame_len = 0;
+			ma->frames_since_reconnect++;
 			
 			if (G_UNLIKELY((ma->websocket == NULL && ma->websocket_fd <= 0) || success == FALSE)) {
 				return;
@@ -4017,7 +4018,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	
 	mm_set_group_chat(ma, team_id, name, id); 
 
-	chatconv = purple_serv_got_joined_chat(pc, g_str_hash(id), name);
+	chatconv = purple_serv_got_joined_chat(pc, id_hash, name);
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "name", g_strdup(name));
