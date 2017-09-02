@@ -4182,7 +4182,24 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	const gchar *id = g_hash_table_lookup(chatdata, "id");
 	const gchar *name = g_hash_table_lookup(chatdata, "name");
 	const gchar *team_id = g_hash_table_lookup(chatdata, "team_id");
-	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(id));
+	guint id_hash;
+	PurpleChatConversation *chatconv;
+	
+	if (id == NULL && name == NULL) {
+		//What do?
+		return;
+	}
+	
+	if (id == NULL) {
+		id = g_hash_table_lookup(ma->group_chats_rev, name);
+	}
+	//TODO use the api look up name info from the id
+	if (id == NULL) {
+		return;
+	}
+	
+	id_hash = g_str_hash(id);
+	chatconv = purple_conversations_find_chat(ma->pc, id_hash);
 	
 	if (chatconv != NULL && !purple_chat_conversation_has_left(chatconv)) {
 		purple_conversation_present(PURPLE_CONVERSATION(chatconv));
