@@ -2584,7 +2584,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
-			gchar *msg_pre = mm_markdown_to_html(msg_text);
+			gchar *msg_pre = mm_markdown_to_html(ma, msg_text);
 			gchar *msg_post = g_regex_replace(ma->mention_me_regex, msg_pre, -1, 0, MATTERMOST_MENTION_ME_REPLACE, G_REGEX_MATCH_NOTEMPTY, NULL);
 			gchar *message = g_regex_replace(ma->mention_all_regex, msg_post, -1, 0, MATTERMOST_MENTION_ALL_REPLACE, G_REGEX_MATCH_NOTEMPTY, NULL);
 
