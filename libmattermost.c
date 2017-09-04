@@ -562,8 +562,190 @@ int mkd_line(char *, int, char **, int);
 
 #define MKD_EMBED	MKD_NOLINKS|MKD_NOIMAGE|MKD_TAGTEXT
 
+
+
+typedef struct {
+	GRegex *regex;
+	gchar *find;
+	gchar *repl;
+} MattermostRegexElement;
+
+#define MM_MAX_REV_REGEX 7
+
+static MattermostRegexElement mm_rev_regexes[MM_MAX_REV_REGEX]={
+	// (inline) code block, bold, italic, strikethrough -> pass
+	// no underline in html5, font size 1,2 - ignored.
+	// line break 
+	{
+	.find = "<br>",
+	.repl = "\n",
+	.regex = NULL,
+	},
+	// title1 
+	{
+	.find = "<font size=\"7\">(.*)</font>",
+	.repl = " # \\1",
+	.regex = NULL,
+	},
+	// title2 
+	{
+	.find = "<font size=\"6\">(.*)</font>",
+	.repl = " ## \\1",
+	.regex = NULL,
+	},
+	// title3
+	{
+	.find = "<font size=\"5\">(.*)</font>",
+	.repl = " ### \\1",
+	.regex = NULL,
+	},
+	// title4 
+	{
+	.find = "<font size=\"4\">(.*)</font>",
+	.repl = " #### \\1",
+	.regex = NULL,
+	},
+	// horizontal line
+	{
+	.find = "<hr>",
+	.repl = "\n---\n",
+	.regex = NULL,
+	},
+	// blockquote
+	{
+	.find = "^ *&gt;(.*)$",
+	.repl = ">\\1",
+	.regex = NULL,
+	},
+};
+
+#define MM_MAX_REGEX 9
+
+static MattermostRegexElement mm_regexes[MM_MAX_REGEX]={
+	// line break 
+	{
+	.find = "<br>",
+	.repl = "\n",
+	.regex = NULL,
+	},
+	// (inline) code block 
+	{
+	.find = "<code>(.*)</code>",
+	.repl = "<font back=\"#E1E1E1\">\\1</font>",
+	.regex = NULL,
+	},
+	// title1
+	{
+	.find = "^ *# +(.*)($|<br>)",
+	.repl = "<font size=\"7\"><b>\\1</b></font>",
+	.regex = NULL,
+	},
+	// title2
+	{
+	.find = "^ *## +(.*)$",
+	.repl = "<font size=\"6\"><b>\\1</b></font>",
+	.regex = NULL,
+	},
+	// title3
+	{
+	.find = "^ *### +(.*)$",
+	.repl = "<font size=\"5\"><b>\\1</b></font>",
+	.regex = NULL,
+	},
+	// title4-6 (normal font size is 3)
+	{
+	.find = "^ *#####?#? +(.*)$",
+	.repl = "<font size=\"4\"<b>\\1</b></font>",
+	.regex = NULL,
+	},
+	// horizontal line
+	{	
+	.find = "^ *(-|_|\\*){3,}$",
+	.repl = "<hr>",
+	.regex = NULL,
+	},
+	// blockquote
+	{
+	.find = "^ *(&gt;|>)(.*)$",
+	.repl = "<font size=\"6\"><b>\"</b></font>\\2", //0x93 ?
+	.regex = NULL,
+	},
+	// strikethrough
+	{
+	.find = "<del>(.*)</del>",
+	.repl = "<s>\\1</s>",
+	.regex = NULL,
+	},
+};
+
+static void 
+mm_purple_xhtml_im_html_init(void)
+{
+	gint i;
+
+	for (i=0;i< MM_MAX_REGEX; i++) {
+		mm_regexes[i].regex = g_regex_new(mm_regexes[i].find, G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE|G_REGEX_MULTILINE|G_REGEX_UNGREEDY, G_REGEX_MATCH_NOTEMPTY, NULL);
+	}
+	for (i=0;i< MM_MAX_REV_REGEX; i++) {
+		mm_rev_regexes[i].regex = g_regex_new(mm_rev_regexes[i].find, G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE|G_REGEX_MULTILINE|G_REGEX_UNGREEDY, G_REGEX_MATCH_NOTEMPTY, NULL);
+	}
+
+}
+
 static gchar *
-mm_markdown_to_html(const gchar *markdown)
+mm_purple_html_to_xhtml_im_parse(MattermostAccount *ma, const gchar *html)
+{
+	gint i;
+	gchar *input = NULL;
+	gchar *output = NULL;
+
+	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
+		return g_strdup(html);
+	}
+ 
+	if (html == NULL) {
+		return NULL;
+	}
+
+	input = g_strdup(html);
+	for (i=0;i< MM_MAX_REGEX; i++) {
+		output = g_regex_replace(mm_regexes[i].regex, input, -1, 0, mm_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
+		g_free(input);
+		input = g_strdup(output);
+		g_free(output);
+	}
+	
+	return g_strdup(input);
+}
+
+static gchar *
+mm_purple_xhtml_im_to_html_parse(MattermostAccount *ma, const gchar *xhtml_im)
+{
+	gint i;
+	gchar *input = NULL;
+	gchar *output = NULL;
+
+	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
+		return g_strdup(xhtml_im);
+	}
+
+	if (xhtml_im == NULL) {
+		return NULL;
+	}
+
+	input = g_strdup(xhtml_im);
+	for (i=0;i< MM_MAX_REV_REGEX; i++) {
+		output = g_regex_replace(mm_rev_regexes[i].regex, input, -1, 0, mm_rev_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
+		g_free(input);
+		input = g_strdup(output);
+		g_free(output);
+	}
+
+	return g_strdup(input);
+}
+
+static gchar *
+mm_markdown_to_html(MattermostAccount *ma, const gchar *markdown)
 {
 	static char *markdown_str = NULL;
 	int markdown_len;
@@ -621,7 +803,7 @@ mm_markdown_to_html(const gchar *markdown)
 		return NULL;
 	}
 
-	return g_strndup(markdown_str, markdown_len);
+	return mm_purple_html_to_xhtml_im_parse(ma, g_strndup(markdown_str, markdown_len));
 }
 
 
@@ -2409,10 +2591,10 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 			if (!purple_strequal(msg_pre, msg_post)) {
 				msg_flags |= PURPLE_MESSAGE_NICK;
 			}
-
+      
 			g_free(msg_pre);
 			g_free(msg_post);
-			
+		
 			if (json_object_get_int_member(post, "edit_at")) {
 				gchar *tmp = g_strconcat(_("Edited: "), message, NULL);
 				g_free(message);
@@ -4438,10 +4620,12 @@ const gchar *message, PurpleMessageFlags flags)
 	g_return_val_if_fail(room_id, -1);
 	g_return_val_if_fail(team_id, -1);
 	
-	ret = mm_conversation_send_message(ma, team_id, room_id, message);
+	ret = mm_conversation_send_message(ma, team_id, room_id, mm_purple_xhtml_im_to_html_parse(ma, message));
 
 	if (ret > 0) {
-		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self->username, PURPLE_MESSAGE_SEND, message, time(NULL));
+		gchar *message_out = mm_markdown_to_html(ma, message);
+		purple_serv_got_chat_in(pc, g_str_hash(room_id), ma->self->username, PURPLE_MESSAGE_SEND, message_out, time(NULL));
+		g_free(message_out);
 	}
 	return ret;
 }
@@ -5044,9 +5228,12 @@ mm_add_account_options(GList *account_options)
 	option = purple_account_option_bool_new(N_("Auto-Join new chats"), "use-autojoin", FALSE);
 	account_options = g_list_append(account_options, option);
 
-	option = purple_account_option_bool_new(N_("Auto generate buddies aliases"), "use-alias", FALSE);
+	option = purple_account_option_bool_new(N_("Interpret (subset of) markdown"), "use-markdown", TRUE);
+	account_options = g_list_append(account_options, option);	
+
+  option = purple_account_option_bool_new(N_("Auto generate buddies aliases"), "use-alias", FALSE);
 	account_options = g_list_append(account_options, option);
-	
+
 	return account_options;
 }
 
@@ -5208,6 +5395,8 @@ static gboolean
 plugin_load(PurplePlugin *plugin, GError **error)
 {
 	
+	mm_purple_xhtml_im_html_init();
+
 	purple_cmd_register("invite_people", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_slash_command,
