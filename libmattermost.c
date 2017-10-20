@@ -205,6 +205,7 @@ json_array_from_string(const gchar *str)
 #define purple_chat_conversation_has_user     purple_conv_chat_find_user
 #define purple_chat_conversation_get_topic    purple_conv_chat_get_topic
 #define purple_chat_conversation_set_topic    purple_conv_chat_set_topic
+#define purple_chat_conversation_leave        purple_conv_chat_left
 #define PurpleChatUserFlags  PurpleConvChatBuddyFlags
 #define PURPLE_CHAT_USER_NONE     PURPLE_CBFLAGS_NONE
 #define PURPLE_CHAT_USER_OP       PURPLE_CBFLAGS_OP
@@ -273,6 +274,7 @@ purple_chat_set_alias(PurpleChat *chat, const char *alias)
 #define purple_blist_find_buddy        purple_find_buddy
 #define purple_serv_got_alias                      serv_got_alias
 #define purple_buddy_set_server_alias  purple_blist_server_alias_buddy
+#define purple_buddy_set_local_alias		purple_blist_alias_buddy
 #define purple_account_set_private_alias    purple_account_set_alias
 #define purple_account_get_private_alias    purple_account_get_alias
 #define purple_protocol_got_user_status		purple_prpl_got_user_status
@@ -331,6 +333,10 @@ purple_message_destroy(PurpleMessage *message)
 #if	!PURPLE_VERSION_CHECK(2, 12, 0)
 #	define PURPLE_MESSAGE_REMOTE_SEND  0x10000
 #endif
+
+#define g_timeout_add_seconds  purple_timeout_add_seconds
+#define g_timeout_add          purple_timeout_add
+#define g_source_remove        purple_timeout_remove
 
 #else
 // Purple3 helper functions
@@ -1621,7 +1627,7 @@ gboolean mm_idle_updater_timeout(gpointer data);
 
 void mm_set_status(PurpleAccount *account, PurpleStatus *status);
 
-static gchar *mm_purple_flag_to_role(PurpleConvChatBuddyFlags flags);
+static gchar *mm_purple_flag_to_role(PurpleChatUserFlags flags);
 
 static PurpleNotifyUserInfo *
 mm_user_info(MattermostUser *mu)
@@ -1707,7 +1713,7 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	// we need team_id for this.
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 	// Update our idleness every 4.5 minutes
-	ma->idle_timeout = purple_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
+	ma->idle_timeout = g_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
 
 
@@ -1734,7 +1740,7 @@ mm_set_user_blist(MattermostAccount *ma, MattermostUser *mu, PurpleBuddy *buddy)
 
 	if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
 		gchar *alias = g_strdup(mm_get_alias(mu));
-		purple_blist_alias_buddy(buddy, alias);
+		purple_buddy_set_local_alias(buddy, alias);
 		g_free(alias);
 	}	
 
@@ -1949,7 +1955,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 
 		if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
 			gchar *alias = g_strdup(mm_get_alias(mm_user));
-			purple_blist_alias_buddy(buddy, alias);
+			purple_buddy_set_local_alias(buddy, alias);
 			g_free(alias);
 		}
 
@@ -2384,7 +2390,7 @@ mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
 }
 
 static gchar *
-mm_purple_flag_to_role(PurpleConvChatBuddyFlags flags)
+mm_purple_flag_to_role(PurpleChatUserFlags flags)
 {
 	const gchar *cu_str = _("Channel User");
 	const gchar *ca_str = _("Channel Administrator");
@@ -2953,7 +2959,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 				PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 				if (chat) {
 					PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-					if (chatconv) purple_conv_chat_left(chatconv);
+					if (chatconv) purple_chat_conversation_leave(chatconv);
 					mm_remove_group_chat(ma, channel_id);
 					mm_remove_group_chat(ma, channel_id); 
 					purple_blist_remove_chat(chat);
@@ -3016,7 +3022,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id);
 			if (chat) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-				if (chatconv) purple_conv_chat_left(chatconv);
+				if (chatconv) purple_chat_conversation_leave(chatconv);
 				mm_remove_group_chat(ma, channel_id);
 				purple_blist_remove_chat(chat);
 			}
@@ -3490,8 +3496,8 @@ mm_close(PurpleConnection *pc)
 	
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 
-	purple_timeout_remove(ma->idle_timeout);
-	purple_timeout_remove(ma->read_messages_timeout);
+	g_source_remove(ma->idle_timeout);
+	g_source_remove(ma->read_messages_timeout);
 	
 	purple_proxy_connect_cancel_with_handle(pc);
 	if (ma->websocket != NULL) purple_ssl_close(ma->websocket);
@@ -4325,7 +4331,7 @@ mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	if (json_object_get_int_member(obj, "status_code") >= 400) {
 		purple_notify_error(ma->pc, "Error", "Error joining channel", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
-		if (chatconv) purple_conv_chat_left(chatconv);
+		if (chatconv) purple_chat_conversation_leave(chatconv);
 		return;
 	}
 
@@ -4446,8 +4452,8 @@ mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id)
 	g_free(ma->current_channel_id);
 	ma->current_channel_id = g_strdup(room_id);
 	
-	purple_timeout_remove(ma->read_messages_timeout);
-	ma->read_messages_timeout = purple_timeout_add_seconds(1, mm_mark_room_messages_read_timeout, ma);
+	g_source_remove(ma->read_messages_timeout);
+	ma->read_messages_timeout = g_timeout_add_seconds(1, mm_mark_room_messages_read_timeout, ma);
 }
 
 static void
@@ -4996,7 +5002,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	mm_add_buddy(ma->pc, buddy, NULL, NULL);
 		
 	if (purple_account_get_bool(ma->account,"use-alias", FALSE)) {	
-		purple_blist_alias_buddy(buddy, mm_user->alias);
+		purple_buddy_set_local_alias(buddy, mm_user->alias);
 	}
 
 	mm_g_free_mattermost_user(mm_user);
