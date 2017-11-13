@@ -4954,7 +4954,7 @@ mm_roomlist_show(PurpleProtocolAction *action)
 static MattermostUser *
 mm_user_from_json(MattermostAccount *ma, JsonObject *user)
 {
-	MattermostUser *mu = g_new(MattermostUser, 1);	
+	MattermostUser *mu = g_new0(MattermostUser, 1);	
 	
 	mu->user_id = g_strdup(json_object_get_string_member(user, "id"));
 	mu->username = g_strdup(json_object_get_string_member(user, "username"));
