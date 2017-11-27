@@ -132,7 +132,10 @@ For people using Red Hat/Fedora/CentOS distributions of Linux operating systems,
 ```
 sudo yum install rpm-build json-glib-devel libmarkdown-devel libpurple-devel mercurial
 git clone https://github.com/EionRobb/purple-mattermost.git && cd purple-mattermost;
+OLD_LANG=$LANG
+LANG=en_US.UTF-8
 make && make rpm
+LANG=$OLD_LANG
 sudo yum localinstall ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm ./rpmdir/RPMS/\*/purple-mattermost-\*.rpm
 ```
 
