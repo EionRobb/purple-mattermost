@@ -1,3 +1,23 @@
+## V4 API note:
+
+V4 API implementation is Work In Progress and is not complete at this moment,
+in particular following does not work and/or is buggy:
+
+- direct and group channels display in contacts (buddies list)
+- channel joining (from room list). 
+- room list lists only public non-joined channels. 
+- group channel joining crashes pidgin.
+- chat topic/purpose reading/setting.
+- user list for rooms is limited to (first) 200
+- ...
+
+So ... what works for now ?
+
+- message receiving/sending
+- status changes
+- user searches
+- room list (partially see above ..)
+
 
 # Pidgin-Mattermost plugin by Eion Robb 
 
