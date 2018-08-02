@@ -3158,6 +3158,14 @@ mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		const gchar *header = json_object_get_string_member(channel, "header");
 		const gchar *purpose = json_object_get_string_member(channel, "purpose");
 		const gchar *team_id = json_object_get_string_member(channel, "team_id");
+
+		//FIXME: in v4 api team_id is NULL for group chats, that breaks the code in many places.
+		//       should be rewritten.
+
+		if (team_id == NULL || strlen(team_id) == 0) {
+			team_id = mm_get_first_team_id(ma);
+		}
+
 		const gchar *team_name = g_hash_table_lookup(ma->teams, team_id);
 
 		PurpleRoomlistRoom *room;
