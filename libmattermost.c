@@ -169,9 +169,10 @@ json_array_from_string(const gchar *str)
 
 #define MATTERMOST_BOT_LABEL " [BOT]"
 
-#define MM_HTTP_GET 0
-#define MM_HTTP_PUT 1
-#define MM_HTTP_POST 2
+#define MM_HTTP_GET    0
+#define MM_HTTP_PUT    1
+#define MM_HTTP_POST   2
+#define MM_HTTP_DELETE 3
 
 // Purple2 compat functions
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
@@ -1216,7 +1217,8 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	purple_debug_info("mattermost", "Fetching url %s\n", url);
 
 #if PURPLE_VERSION_CHECK(3, 0, 0)
-	
+	//FIXME: is this HTTP/1.0 ? with HTTP/1.1 Mattermost server v5 sends chunked data ..
+
 	PurpleHttpRequest *request = purple_http_request_new(url);
 	purple_http_request_header_set(request, "Accept", "*/*");
 	purple_http_request_header_set(request, "User-Agent", MATTERMOST_USERAGENT);
@@ -1235,7 +1237,13 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 		}
 		purple_http_request_set_contents(request, postdata, -1);
 	}
-	
+	switch(optype) {
+		case MM_HTTP_DELETE: purple_http_request_set_method(request,"DELETE"); break;
+		case MM_HTTP_PUT: purple_http_request_set_method(request,"PUT"); break;
+		case MM_HTTP_POST: purple_http_request_set_method(request,"POST"); break;
+		default: purple_http_request_set_method(request,"GET"); 
+	}
+
 	http_conn = purple_http_request(ma->pc, request, mm_response_callback, conn);
 	purple_http_request_unref(request);
 
@@ -1250,15 +1258,14 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	
 	headers = g_string_new(NULL);
 	
-// FIXME: TODO: review this for v4.... Jarek
+	switch(optype) {
+		case MM_HTTP_DELETE: g_string_append_printf(headers, "DELETE"); break;
+		case MM_HTTP_PUT: g_string_append_printf(headers, "PUT"); break;
+		case MM_HTTP_POST: g_string_append_printf(headers, "POST"); break;
+		default: g_string_append_printf(headers, "GET");
+	}
 
-    if (optype == MM_HTTP_PUT) {  
-      g_string_append_printf(headers, "%s /%s HTTP/1.1\r\n", "PUT", path);
-    } else {
-	//Use the full 'url' until libpurple can handle path's longer than 256 chars
-      g_string_append_printf(headers, "%s /%s HTTP/1.0\r\n", (postdata ? "POST" : "GET"), path);
-    }
-	//g_string_append_printf(headers, "%s %s HTTP/1.0\r\n", (postdata ? "POST" : "GET"), url);
+	g_string_append_printf(headers, " /%s HTTP/1.0\r\n", path); //NOT 1.1 to avoid chunked responses.
 	g_string_append_printf(headers, "Connection: close\r\n");
 	g_string_append_printf(headers, "Host: %s\r\n", host);
 	g_string_append_printf(headers, "Accept: */*\r\n");
@@ -1849,7 +1856,8 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 		return;
 	}
 
-	JsonObject *channel = json_object_get_object_member(response,"channel");
+//	JsonObject *channel = json_object_get_object_member(response,"channel");
+	JsonObject *channel = json_node_get_object(node);
 	const gchar *id = json_object_get_string_member(channel, "id");
 	const gchar *name = json_object_get_string_member(channel, "name");
 	const gchar *display_name = json_object_get_string_member(channel, "display_name");
@@ -1897,8 +1905,8 @@ static void
 mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *id)
 {
 	gchar *url;
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s",team_id,id); 
-//    url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s",id); 
+//	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s",team_id,id); 
+url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s",id);  //FIXME: team ID is read from response NOW
 	mm_fetch_url(ma, url, MM_HTTP_GET, NULL, mm_get_channel_by_id_response, g_strdup(team_id));
 	g_free(url);
 }
@@ -2117,7 +2125,7 @@ mm_get_teams(MattermostAccount *ma)
 	mm_start_socket(ma);
 
 //	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/all"); 
-    url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams"); 
+    url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/teams"); 
 	mm_fetch_url(ma, url, MM_HTTP_GET, NULL, mm_got_teams, NULL);
 	g_free(url);
 	
@@ -2272,7 +2280,7 @@ mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels
 	if (purple_strequal(category,"direct_channel_show") || purple_strequal(category,"group_channel_show")) {
 		gchar *url;
 //		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/preferences/%s",category);
-        url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences/%s", category);
+		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences/%s", category);
 		mm_fetch_url(ma, url, MM_HTTP_GET, NULL, mm_list_user_prefs_channel_show_response, channels);
 		g_free(url);
 	}
@@ -3302,12 +3310,10 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		// Get a list of channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
-		//mmtrl->team_desc = g_strdup(_(": More channels"));
-        mmtrl->team_desc = g_strdup(_(": All public channels"));
+		mmtrl->team_desc = g_strdup(_(": More channels"));
 		mmtrl->roomlist = roomlist;
-		//TODO: fixme - no such method in api v4 ? for now lets get all public channels
 		//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/more/0/9999", team_id);
-        url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels", team_id); 
+		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels", team_id); 
 		mm_fetch_url(ma, url, MM_HTTP_GET, NULL, mm_roomlist_got_list, mmtrl);
 		g_free(url);
 		
@@ -3918,7 +3924,7 @@ mm_socket_send_headers(MattermostAccount *ma)
 	cookies = mm_cookies_to_string(ma);
 	
 //	websocket_header = g_strdup_printf("GET /api/" MATTERMOST_VERSION "/users/websocket HTTP/1.1\r\n"
-    websocket_header = g_strdup_printf("GET /api/" MATTERMOST_VERSION "/websocket HTTP/1.1\r\n"
+    websocket_header = g_strdup_printf("GET /api/" MATTERMOST_VERSION "/websocket HTTP/1.0\r\n"
 							"Host: %s\r\n"
 							"Connection: Upgrade\r\n"
 							"Pragma: no-cache\r\n"
@@ -4037,10 +4043,10 @@ static void
 mm_chat_leave(PurpleConnection *pc, int id)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-	const gchar *channel_id, *team_id;
+	const gchar *channel_id; //, *team_id;
 	PurpleChatConversation *chatconv;
 	gchar *url;
-	
+
 	chatconv = purple_conversations_find_chat(pc, id);
 	if (chatconv == NULL) {
 		return;
@@ -4050,18 +4056,22 @@ mm_chat_leave(PurpleConnection *pc, int id)
 	if (channel_id == NULL) {
 		channel_id = purple_conversation_get_name(PURPLE_CONVERSATION(chatconv));
 	}
-	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
-	if (!team_id) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
-	if (!team_id) {
-		//Uh oh!
-		team_id = mm_get_first_team_id(ma);
-	}
-	
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s/leave", team_id, channel_id);
-	mm_fetch_url(ma, url, MM_HTTP_POST, "", NULL, NULL);
+//	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
+//	if (!team_id) {
+//		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
+//	}
+//	if (!team_id) {
+//		//Uh oh!
+//		team_id = mm_get_first_team_id(ma);
+//	}
+
+	//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s/leave", team_id, channel_id);
+	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/members/%s", channel_id, ma->self->user_id);
+	//mm_fetch_url(ma, url, MM_HTTP_POST, "", NULL, NULL);
+	mm_fetch_url(ma, url, MM_HTTP_DELETE, NULL, NULL, NULL);
+
 	g_free(url);
+
 }
 
 static void
@@ -4073,7 +4083,8 @@ mm_chat_invite(PurpleConnection *pc, int id, const char *message, const char *wh
 	JsonObject *data;
 	gchar *postdata;
 	gchar *url;
-	const gchar *team_id, *channel_id;
+	//const gchar *team_id, *channel_id;
+	const gchar *channel_id;
 	
 	chatconv = purple_conversations_find_chat(pc, id);
 	if (chatconv == NULL) {
@@ -4084,14 +4095,14 @@ mm_chat_invite(PurpleConnection *pc, int id, const char *message, const char *wh
 	if (channel_id == NULL) {
 		channel_id = purple_conversation_get_name(PURPLE_CONVERSATION(chatconv));
 	}
-	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
-	if (!team_id) {
-		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	}
-	if (!team_id) {
-		//Uh oh!
-		team_id = mm_get_first_team_id(ma);
-	}
+//	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
+//	if (!team_id) {
+//		team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
+//	}
+//	if (!team_id) {
+//		//Uh oh!
+//		team_id = mm_get_first_team_id(ma);
+//	}
 	
 	user_id = g_hash_table_lookup(ma->usernames_to_ids, who);
 	if (user_id == NULL) {
@@ -4109,7 +4120,9 @@ mm_chat_invite(PurpleConnection *pc, int id, const char *message, const char *wh
 	json_object_set_string_member(data, "user_id", user_id);
 	
 	postdata = json_object_to_string(data);
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s/add", team_id, channel_id);
+
+	//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s/add", team_id, channel_id);
+	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/members", channel_id);
 	
 	mm_fetch_url(ma, url, MM_HTTP_POST, postdata, NULL, NULL);
 	
@@ -4171,26 +4184,27 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	MattermostChannel *channel = user_data;
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
-	JsonObject *obj = json_node_get_object(node);
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	const gchar *creator_id = g_hash_table_lookup(ma->group_chats_creators, channel->id);
 
-	if (json_object_get_int_member(obj, "status_code") >= 400) {
-		purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
-		return;
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		if (json_object_get_int_member(json_node_get_object(node), "status_code") >= 400) {
+			purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(json_node_get_object(node), "message"), purple_request_cpar_from_connection(ma->pc));
+			return;
+		}
 	}
 
-	if (!json_object_has_member(obj, "status_code")) {
+//	if (!json_object_has_member(obj, "status_code")) {
 //		GList *users = json_object_get_values(obj);
 //		GList *i;
 		GList *users_list = NULL, *flags_list = NULL;
 		
-        JsonArray *users = json_node_get_array(node);
-        guint i, len = json_array_get_length(users);
+		JsonArray *users = json_node_get_array(node);
+		guint i, len = json_array_get_length(users);
   		
 //		for (i = users; i; i = i->next) {
-        for (i = 0; i < len; i++) {
-            JsonObject *user = json_array_get_object_element(users,i);
+		for (i = 0; i < len; i++) {
+			JsonObject *user = json_array_get_object_element(users,i);
 //			JsonNode *user_node = i->data;
 //			JsonObject *user = json_node_get_object(user_node);
 			const gchar *user_id = json_object_get_string_member(user, "id");
@@ -4241,7 +4255,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		g_list_free(users_list);
 		g_list_free(flags_list);
 		//g_list_free(users);
-	}
+//	}
 	
 	if (ma->last_load_last_message_timestamp > 0) {
 		mm_get_history_of_room(ma, channel, -1);
@@ -4477,6 +4491,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 		return;
 	}
 	
+
 	mm_set_group_chat(ma, team_id, name, id); 
 
 	chatconv = purple_serv_got_joined_chat(pc, id_hash, name);
@@ -4843,28 +4858,35 @@ mm_chat_set_header_purpose(PurpleConnection *pc, int id, const char *topic, cons
 	JsonObject *data;
 	gchar *postdata;
 	gchar *url;
-	const gchar *team_id, *channel_id;
+	//const gchar *team_id, *channel_id;
+	const gchar *channel_id;
 	
 	chatconv = purple_conversations_find_chat(pc, id);
 	if (chatconv == NULL) return;
 	
 	channel_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "id");
-	team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
+	//team_id = purple_conversation_get_data(PURPLE_CONVERSATION(chatconv), "team_id");
 	
 	data = json_object_new();
-	json_object_set_string_member(data, "channel_id", channel_id);
+	//json_object_set_string_member(data, "channel_id", channel_id);
+	json_object_set_string_member(data, "id", channel_id);
 
 	if (isheader) {
-		json_object_set_string_member(data, "channel_header", topic);
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/update_header", team_id);
+		//json_object_set_string_member(data, "channel_header", topic);
+		json_object_set_string_member(data, "header", topic);
+		//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/update_header", team_id);
 	} else {
-		json_object_set_string_member(data, "channel_purpose", topic);
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/update_purpose", team_id);
+		//json_object_set_string_member(data, "channel_purpose", topic);
+		json_object_set_string_member(data, "purpose", topic);
+		//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/update_purpose", team_id);
 	}
+
+	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s", channel_id);
 
 	postdata = json_object_to_string(data);
 	
-	mm_fetch_url(ma, url, MM_HTTP_POST, postdata, NULL, NULL);
+	//mm_fetch_url(ma, url, MM_HTTP_POST, postdata, NULL, NULL);
+	mm_fetch_url(ma, url, MM_HTTP_PUT, postdata, NULL, NULL);
 	
 	g_free(postdata);
 	g_free(url);
@@ -5304,6 +5326,9 @@ mm_status_types(PurpleAccount *account)
 	types = g_list_append(types, status);
 	
 	status = purple_status_type_new_full(PURPLE_STATUS_OFFLINE, "offline", "Offline", TRUE, TRUE, FALSE);
+	types = g_list_append(types, status);
+
+	status = purple_status_type_new_full(PURPLE_STATUS_UNAVAILABLE, "dnd", "Busy", TRUE, TRUE, FALSE);
 	types = g_list_append(types, status);
 	
 	status = purple_status_type_new_full(PURPLE_STATUS_INVISIBLE, "invisible", "Invisible", TRUE, TRUE, FALSE);
