@@ -1,11 +1,11 @@
 ## V4 API note:
 
-V4 API implementation is Work In Progress and is not complete at this moment,
+V4 API implementation is Work In Progress:
 in particular following does not work and/or is buggy:
 
-- channel joining (from room list). 
-- group channel joining (from room list) crashes pidgin. 
 - user list for rooms is limited to (first) 200
+- pidgin / libpurple channels list (in buddy list) is sometimes not 
+  populated (restart fixes it) .. could be libpurple2 bug ?...
 - ...
 
 
