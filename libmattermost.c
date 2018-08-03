@@ -2226,12 +2226,14 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
 		JsonObject *response = json_node_get_object(node);
 		if (json_object_get_int_member(response, "status_code") >= 400) {
-			purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+			//FIXME: do not notify here: preferences category can be empty and it seems in server v5 it is not defined then.
+			//       this error is not fatal, so just skip silently. This function could be also extended to handle other
+			//       prefs categories.
+			//purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
 			return;
 		}
 	} else {
 		JsonArray *arr = json_node_get_array(node);
-
 		GList *users = json_array_get_elements(arr);
 		GList *channels = user_data;
 		GList *i,*j;
@@ -2277,6 +2279,20 @@ mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, 
 static void
 mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels)
 {
+//TODO: preference categories (v5 server):
+//		 direct_channel_show { name:channel_id,value:bool}
+//		 group_channel_show { name:channel_id,value:bool}
+//		 tutorial_step { name:user_id,value:4 }
+//		 last { name:channel,value:channel_id }
+//		 display_settings { name:use_military_time,value:bool}
+//		 									{ name:name_format,value:username} (or?)
+//		 									{ name:selected_font,value:Open Sans} (or?)
+//		 									{ name:channel_display_mode,value:full} (or?}
+//		 									{ name:message_display,value:compact} (or?}
+//		 									{.name:collapse_previews,value:bool}
+//		 channel_approximate_view_time { name:channel_id,value:unixseconds}
+//		 channel_open_time { name:channel_id,value:unixseconds}
+
 	if (purple_strequal(category,"direct_channel_show") || purple_strequal(category,"group_channel_show")) {
 		gchar *url;
 //		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/preferences/%s",category);
@@ -4427,7 +4443,6 @@ mm_join_room_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 	if (json_object_get_int_member(obj, "status_code") >= 400) {
 		purple_notify_error(ma->pc, "Error", "Error joining channel", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
-		printf("CHANNEL: %s(%s)\n",channel->name, channel->type);
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 		if (chatconv) purple_chat_conversation_leave(chatconv);
 		return;
