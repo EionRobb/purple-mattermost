@@ -4403,13 +4403,15 @@ mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	MattermostChannel *channel = user_data;
 
 	//TODO: errors display
-	
+
 	if (!json_object_has_member(obj, "status_code")) {
 		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 		if (chatconv != NULL) {
-			JsonObject *tmpch = json_object_get_object_member(obj, "channel");
-			const gchar *header = json_object_get_string_member(tmpch, "header");
-			const gchar *purpose = json_object_get_string_member(tmpch, "purpose");
+//		JsonObject *tmpch = json_object_get_object_member(obj, "channel");
+//		const gchar *header = json_object_get_string_member(tmpch, "header");
+//		const gchar *purpose = json_object_get_string_member(tmpch, "purpose");
+			const gchar *header = json_object_get_string_member(obj, "header");
+			const gchar *purpose = json_object_get_string_member(obj, "purpose");
 			purple_chat_conversation_set_topic(chatconv, NULL, mm_make_topic(header, purpose, purple_chat_conversation_get_topic(chatconv)));
 			//BUG: pidgin 2 does not resize conv window field
 			//should be called before purple_conversation_present();	
