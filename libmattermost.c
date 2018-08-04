@@ -1382,7 +1382,7 @@ mm_get_first_team_id(MattermostAccount *ma)
 	return first_team_id;
 }
 
-static void mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels);
+static void mm_get_user_prefs(MattermostAccount *ma, GList *channels);
 
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
@@ -1492,6 +1492,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 	GList *direct_channels = NULL;
 	GList *group_channels = NULL;
 	GList *other_channels = NULL;
+	GList *all_channels = NULL;
 	GList *j = NULL;
 	GList *removenodes = NULL;
 	PurpleBlistNode *bnode;
@@ -1506,7 +1507,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		mm_channel->creator_id = g_strdup(json_object_get_string_member(channel, "creator_id"));
 
 		const gchar *name = json_object_get_string_member(channel, "name");
-		
+
 		if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_DIRECT) {
 			if (!g_hash_table_contains(ma->one_to_ones, mm_channel->id)) {
 				mm_channel->team_id = g_strdup(mm_get_first_team_id(ma));
@@ -1526,7 +1527,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			}
 		}
 
-
+		all_channels = g_list_prepend(all_channels, mm_channel);
 	}
 		
 	// remove from blist unseen buddies and chats (removed MM channels)
@@ -1567,9 +1568,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		}
 	}
 	g_list_free(removenodes);
-
-	mm_list_user_prefs(ma, "direct_channel_show", direct_channels); //FIXME: do only for first team_id
-	mm_list_user_prefs(ma, "group_channel_show", group_channels); //FIXME: for THIS team_id
 
 	gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 
@@ -1632,6 +1630,13 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 	}
 	g_list_free_full(other_channels,mm_g_free_mattermost_channel);
+
+//FIXME: calling it here results in blist.xml trashing -> disappearing channels on buddy lists
+	//		(due to concurrent updates of blist nodes)
+	//		we should run this at init time just after login for full buddy list ?
+	mm_get_user_prefs(ma, all_channels); 
+	//mm_list_user_prefs(ma, "group_channel_show", group_channels); //FIXME: for THIS team_id
+
 }
 
 static void
@@ -2192,63 +2197,63 @@ mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 }
 
 static void
-mm_list_user_prefs_channel_show_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+mm_get_user_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
 		JsonObject *response = json_node_get_object(node);
 		if (json_object_get_int_member(response, "status_code") >= 400) {
-		//TODO: do not notify here: preferences category can be empty and it seems in server v5 it is not defined then.
-		//       this error is not fatal, so just skip silently. This function could be also extended to handle other
-		//       prefs categories.
-		//	purple_notify_error(ma->pc, _("Get Preferences Error"), _("There was an error reading user preferences from server"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+			//NOTE: Do not raise error: preferences can be empty and that's OK.
 			return;
 		}
 	} else {
 		JsonArray *arr = json_node_get_array(node);
-		GList *users = json_array_get_elements(arr);
-		GList *channels = user_data;
-		GList *i,*j;
+		GList *prefs = json_array_get_elements(arr);
+		GList *i;
 		GList *mm_users = NULL;
+		//GList *mm_channels = NULL;
 
-		for (i = users; i != NULL; i = i->next) {
+		for (i = prefs; i != NULL; i = i->next) {
 
-			JsonNode *usernode = i->data;
-			JsonObject *user = json_node_get_object(usernode);
+			JsonNode *prefnode = i->data;
+			JsonObject *pref = json_node_get_object(prefnode);
 
-			const gchar *id = g_strdup(json_object_get_string_member(user, "name"));
-			const gchar *value = g_strdup(json_object_get_string_member(user, "value"));
+			const gchar *category = g_strdup(json_object_get_string_member(pref, "category"));
+			const gchar *name = g_strdup(json_object_get_string_member(pref, "name"));
+			const gchar *value = g_strdup(json_object_get_string_member(pref, "value"));
 
-			for (j = channels; j != NULL; j=j->next) {
-				MattermostChannel *channel = j->data;
-				if (purple_strequal(channel->id, id) || purple_strequal(channel->name, id)) {  // DIRECT channel: use NAME
-					if (purple_strequal(value, "false")) {
-						if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT))) {
-							mm_remove_blist_by_id(ma, id);
-						} else if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
-							mm_remove_blist_by_id(ma, id);
-						}
-					} else if (purple_strequal(value, "true")) {
-						if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT))) {
-							MattermostUser *mm_user = g_new0(MattermostUser,1);
-							mm_user->user_id=g_strdup(id);
-							mm_user->room_id=g_strdup(channel->id);	
-							
-							mm_users = g_list_prepend(mm_users, mm_user);
-
-						} else if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
-							mm_get_channel_by_id(ma, channel->team_id, id); //no MM API for muliple (v3?)
-						}
-					} //TODO: else { ERROR }
-				}
+			if (!purple_strequal(name, ma->self->user_id) &&
+				 (purple_strequal(category,"direct_channel_show")) && 
+				 purple_strequal(value,"true") && strlen(name)) {
+				MattermostUser *mm_user = g_new0(MattermostUser,1);
+				mm_user->user_id=g_strdup(name);
+				mm_user->room_id=g_strdup(g_strconcat(ma->self->user_id,"__",name,NULL));	
+				mm_users = g_list_prepend(mm_users, mm_user);
+			} else if ((purple_strequal(category,"group_channel_show")) && 
+				purple_strequal(value,"true") && strlen(name)) {
+				//FIXME: we do not need or want team_id for group channels
+				//FIXME: doing this one by one and in parallel with other blist tasks
+				//		results in blist trashing... REWRITE
+				//mm_get_channel_by_id(ma,mm_get_first_team_id(ma), name); //no MM API for muliple (v3?)
+			} else if ((purple_strequal(category,"group_channel_show") ||
+				 purple_strequal(category,"direct_channel_show")) && 
+				 purple_strequal(value,"false") && strlen(name)) {
+				mm_remove_blist_by_id(ma,name);
+			} else if (purple_strequal(category,"channel_approximate_view_time")) {
+				//TODO: set last viewed timestamp for history read ?
 			}
-		}
-
+			//auto_reset_manual_status
+			//channel_open_time
+			//advanced_settings
+			//last -> channel|team
+			//tutorial_step
+			}
 		mm_get_users_by_ids(ma, mm_users);
-	}
+		}
 }
 
+
 static void
-mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels)
+mm_get_user_prefs(MattermostAccount *ma, GList *channels)
 {
 //TODO: preference categories (v5 server):
 //		 direct_channel_show { name:channel_id,value:bool}
@@ -2264,12 +2269,11 @@ mm_list_user_prefs(MattermostAccount *ma, const gchar *category, GList *channels
 //		 channel_approximate_view_time { name:channel_id,value:unixseconds}
 //		 channel_open_time { name:channel_id,value:unixseconds}
 
-	if (purple_strequal(category,"direct_channel_show") || purple_strequal(category,"group_channel_show")) {
-		gchar *url;
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences/%s", category);
-		mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_list_user_prefs_channel_show_response, channels);
-		g_free(url);
-	}
+	gchar *url;
+	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences");
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_get_user_prefs_response, channels);
+	g_free(url);
+
 }
 
 static void
