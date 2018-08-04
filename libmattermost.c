@@ -2534,7 +2534,7 @@ mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data
 {
 	MattermostChannelLink *mmchlink = user_data;
 	MattermostFile *mmfile = g_new0(MattermostFile,1);
-	mmfile->uri = g_strdup(json_node_get_string(node));
+	mmfile->uri = g_strdup(json_object_get_string_member(json_node_get_object(node),"link"));
 	mmfile->mmchlink = mmchlink;
 
 	gchar *url;
