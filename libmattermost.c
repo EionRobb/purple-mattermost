@@ -1660,8 +1660,11 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			g_free(alias);
 			}
 		} else {
-			//FIXME: the chat dialog may not be open here , so this needs to be fixed...
-			mm_get_history_of_room(ma, channel, ma->last_load_last_message_timestamp);
+			PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
+			if (chatconv) {
+			//FIXME: we read history once for each team for all group channels .. uh oh ...
+				mm_get_history_of_room(ma, channel, ma->last_load_last_message_timestamp);
+			}
 		}
 
 	}
@@ -4459,7 +4462,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 
 	mm_set_group_chat(ma, team_id, name, id); 
 
-	chatconv = purple_serv_got_joined_chat(pc, id_hash, name);
+	chatconv = purple_serv_got_joined_chat(pc, id_hash, name);//ALIAS ?
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "name", g_strdup(name));
