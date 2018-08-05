@@ -6,6 +6,7 @@ in particular following does not work and/or is buggy:
 - user list for rooms is limited to (first) 200.
 - chat history is not read from local log files.
 - chat history is not (always) read from server.
+- rooms added from room list (join and add chat) have wrong display names set. 
 - ...
 
 
