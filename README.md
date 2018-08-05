@@ -5,7 +5,7 @@ in particular following does not work and/or is buggy:
 
 - user list for rooms is limited to (first) 200.
 - chat history is not read from local log files.
-- group channels are missing from buddy list.
+- chat history is not (always) read from server.
 - ...
 
 
