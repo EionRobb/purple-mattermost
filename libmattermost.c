@@ -1518,7 +1518,7 @@ mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 {
 	GList *prefs;
 	gint64 now = g_get_real_time() / 1000;
-	gint64 then = NULL;
+	gint64 then = 0;
 
 	if (!id) return now;
 
@@ -4347,7 +4347,12 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	if (since < 0) {
 		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
 		if (chat) {
-			channel->channel_approximate_view_time = g_ascii_strtoll(purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time"), NULL, 10);
+			const gchar *tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
+			if(!tmptime) {
+				//FIXME -> why null ? 
+				tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000) - 60*60*24);
+			}
+			channel->channel_approximate_view_time = g_ascii_strtoll(tmptime, NULL, 10);
 		} else {
 			PurpleIMConversation *conv = purple_conversations_find_im_with_account(g_hash_table_lookup(ma->one_to_ones,channel->id),ma->account);
 			if (conv) {
@@ -4548,6 +4553,10 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 	json_object_set_string_member(obj, "prev_channel_id", ma->last_channel_id);
 	postdata = json_object_to_string(obj);
 
+	//FIXME: this could be NULL on first call, but why later ? check!
+	if (!ma->current_channel_id) {
+		return FALSE;
+	}
 	PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(ma->current_channel_id));
 	if (chatconv) {
 		PurpleChat *chat = mm_purple_blist_find_chat(ma, ma->current_channel_id); 
