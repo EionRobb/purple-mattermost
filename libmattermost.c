@@ -1517,7 +1517,7 @@ static gint64
 mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 {
 	GList *prefs;
-	gint64 now = g_get_real_time();
+	gint64 now = g_get_real_time() / 1000;
 	gint64 then = NULL;
 
 	if (!id) return now;
@@ -2049,6 +2049,10 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", mm_user->user_id);
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,(mm_user->channel_approximate_view_time)));
+
+		//this is called for new buddies or on startup: set a flag to read history from server
+		purple_blist_node_set_bool(PURPLE_BLIST_NODE(buddy), "seen", FALSE);
+
 		if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
 			gchar *alias = g_strdup(mm_get_alias(mm_user));
 			purple_buddy_set_local_alias(buddy, alias);
@@ -4290,10 +4294,8 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 			if (chat) {
 				purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
 			}
-		//mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
 		} else {
-			//IMCONV
-		
+			//IMCONV		 set channel_approximate_view_time while calling
 		}
 	}
 
@@ -4347,7 +4349,10 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 		if (chat) {
 			channel->channel_approximate_view_time = g_ascii_strtoll(purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time"), NULL, 10);
 		} else {
-			//FIXME: direct conversation history too ?
+			PurpleIMConversation *conv = purple_conversations_find_im_with_account(g_hash_table_lookup(ma->one_to_ones,channel->id),ma->account);
+			if (conv) {
+				//IMCONV: called with since set properly
+			}	
 		}
 		since = channel->channel_approximate_view_time ? channel->channel_approximate_view_time : g_get_real_time()/1000;
 	}
@@ -4465,6 +4470,7 @@ mm_join_room(MattermostAccount *ma, MattermostChannel *channel)
 	if (purple_strequal(channel->type, MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
 		mm_set_group_chat(ma, mm_get_first_team_id(ma), channel->name, channel->id);//FIXME: remove team_id!
 		mm_get_room_info(ma, channel);
+		mm_get_history_of_room(ma, channel, -1);
 	} else {
 		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/members", channel->id); 
 		mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_join_room_response, channel);
@@ -4555,12 +4561,22 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 			if (imconv) {
 				PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
 				if (buddy) {
-					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
+					// we see that for first time, lets load history from server now.
+					if (!purple_blist_node_get_bool(PURPLE_BLIST_NODE(buddy),"seen")) {
+						MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
+						tmpchannel->id = g_strdup(ma->current_channel_id);
+						//FIXME: null ?
+						gint64 tmptime = g_ascii_strtoll(purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time"), NULL, 10);
+						mm_get_history_of_room(ma, tmpchannel, tmptime);
+
+						purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
+						purple_blist_node_set_bool(PURPLE_BLIST_NODE(buddy),"seen", TRUE);
+
+					}
 				}
 			}
 		}
 	}
-
 	g_free(ma->last_channel_id);
 	ma->last_channel_id = g_strdup(ma->current_channel_id);
 
