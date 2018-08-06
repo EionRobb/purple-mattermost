@@ -4,8 +4,8 @@ V4 API implementation is Work In Progress:
 in particular following does not work and/or is buggy:
 
 - user list for rooms is limited to (first) 200.
-- chat history is not read from local log files.
-- chat history is not (always) read from server.
+- chat history is limited to (first) 200 messages in
+  channel that appeared after the channel has been displayed last time.
 - rooms added from room list (join and add chat) have wrong display names set. 
 - ...
 

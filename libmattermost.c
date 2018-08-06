@@ -1404,7 +1404,6 @@ mm_compare_users_by_id_int(gconstpointer a, gconstpointer b)
 {
 	const MattermostUser *p1 = a;
 	const MattermostUser *p2 = b;
-printf("%s<->%s\n",p1->user_id, p2->user_id);
 	if (!g_strcmp0(p1->user_id,p2->user_id)) return 0;
 
 	return -1;
@@ -2016,7 +2015,6 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		mm_user = i->data;
 		for (j = 0; j < len; j++) {
 			JsonObject *user = json_array_get_object_element(users,j);
-//printf ("USER:%s\n",json_object_to_string(user));
 			if (g_strcmp0(mm_user->user_id,json_object_get_string_member(user,"id")) == 0){
 				mm_user->username = g_strdup(json_object_get_string_member(user, "username"));
 				mm_user->nickname = g_strdup(json_object_get_string_member(user, "nickname"));
@@ -2233,6 +2231,7 @@ mm_compare_prefs_int(gconstpointer a, gconstpointer b)
 
 static void mm_chat_leave(PurpleConnection *pc, int id);
 
+/*
 static void
 mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 {
@@ -2264,6 +2263,7 @@ mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 			// 3.0 purple_chat_conversation_leave(chatconv);	
 	}
 }
+*/
 
 static void
 mm_get_user_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer userdata)
@@ -2579,7 +2579,7 @@ mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, cons
 	g_free(url);
 }
 
-static gint64 mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id);
+//static gint64 mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id);
 
 static void mm_set_room_last_timestamp(MattermostAccount *ma, const gchar *room_id, gint64 last_timestamp);
 
@@ -2652,6 +2652,13 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 
 	PurpleMessageFlags msg_flags;
 
+	if (username != NULL && !g_hash_table_contains(ma->ids_to_usernames, user_id)) {
+		g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
+		g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
+	} else if (username == NULL) {
+		username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+	}
+
 	if (purple_strequal(from_webhook, "true") && override_username && *override_username) {
 		use_username = g_strconcat(override_username, MATTERMOST_BOT_LABEL, NULL);
 		msg_flags = PURPLE_MESSAGE_RECV;	// user_id for BOT is webhook owner ID .. t own BOTS as such too !
@@ -2660,11 +2667,8 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		msg_flags = (purple_strequal(user_id, ma->self->user_id) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
 	}
 
-	if (username != NULL && !g_hash_table_contains(ma->ids_to_usernames, user_id)) {
-		g_hash_table_replace(ma->ids_to_usernames, g_strdup(user_id), g_strdup(username));
-		g_hash_table_replace(ma->usernames_to_ids, g_strdup(username), g_strdup(user_id));
-	} else if (username == NULL) {
-		username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+	if (use_username == NULL) {
+		use_username=g_strdup("(unknown)");
 	}
 
 	if (!g_hash_table_contains(ma->channel_teams, channel_id)) {
@@ -4266,6 +4270,7 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 	JsonObject *posts = json_object_get_object_member(obj, "posts");
 	JsonArray *order = json_object_get_array_member(obj, "order");
+
 	gint64 last_message_timestamp = 0;
 	gint i, len = json_array_get_length(order);
 
@@ -4274,10 +4279,22 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 		JsonObject *post = json_object_get_object_member(posts, post_id);
 
 		last_message_timestamp = mm_process_room_message(ma, post, NULL);
+
 	}
 
 	if (last_message_timestamp > 0) {
-		mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+	
+		PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+		if (chatconv) {
+			PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id); 
+			if (chat) {
+				purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
+			}
+		//mm_set_room_last_timestamp(ma, channel_id, last_message_timestamp);
+		} else {
+			//IMCONV
+		
+		}
 	}
 
 	g_free(channel_id);
@@ -4286,7 +4303,7 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 	// libpurple can't store a 64bit int on a 32bit machine, so convert to something more usable instead (puke)
 	//  also needs to work cross platform, in case the accounts.xml is being shared (double puke)
-
+/*
 static gint64
 mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id)
 {
@@ -4318,6 +4335,7 @@ mm_get_room_last_timestamp(MattermostAccount *ma, const gchar *room_id)
 
 	return last_message_timestamp;
 }
+*/
 
 static void
 mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since)
@@ -4325,13 +4343,18 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	gchar *url;
 	
 	if (since < 0) {
-		since = channel->channel_approximate_view_time ? channel->channel_approximate_view_time : g_get_real_time();
-		
-		//since = mm_get_room_last_timestamp(ma, channel->id);
+		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
+		if (chat) {
+			channel->channel_approximate_view_time = g_ascii_strtoll(purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time"), NULL, 10);
+		} else {
+			//FIXME: direct conversation history too ?
+		}
+		since = channel->channel_approximate_view_time ? channel->channel_approximate_view_time : g_get_real_time()/1000;
 	}
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/posts?since=%" G_GINT64_FORMAT, channel->id, since);
-	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_history_of_room, channel);
+	//FIXME: implement paged query ?
+	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/posts?page=0&per_page=200&since=%" G_GINT64_FORMAT, channel->id, since);
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_history_of_room, g_strdup(channel->id));
 	g_free(url);
 }
 
@@ -4523,7 +4546,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 	if (chatconv) {
 		PurpleChat *chat = mm_purple_blist_find_chat(ma, ma->current_channel_id); 
 		if (chat) {
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()));
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
 		}
 	} else {
 		const gchar *username = g_hash_table_lookup(ma->one_to_ones,ma->current_channel_id);
@@ -4532,7 +4555,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 			if (imconv) {
 				PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
 				if (buddy) {
-					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()));
+					purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
 				}
 			}
 		}
