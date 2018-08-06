@@ -467,6 +467,7 @@ typedef struct {
 	gchar *header;
 	gchar *purpose;	
 	gchar *creator_id;
+	gint64 channel_approximate_view_time;
 } MattermostChannel;
 
 void
@@ -482,6 +483,7 @@ mm_g_free_mattermost_channel(gpointer a)
 	g_free(c->header);
 	g_free(c->purpose);
 	g_free(c->creator_id);
+	//c->channel_approximate_view_time
 }
 
 typedef struct {
@@ -1512,6 +1514,22 @@ mm_channel_is_hidden(MattermostAccount *ma, const gchar *id)
 	return(FALSE);
 }
 
+static gint64
+mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
+{
+	GList *prefs;
+	gint64 now = time(NULL);
+	gint64 then = NULL;
+	for (prefs=ma->user_prefs; prefs != NULL; prefs = g_list_next(prefs)) {
+		MattermostUserPref *pref = prefs->data;
+		if (purple_strequal(pref->category,"channel_approximate_view_time") && purple_strequal(pref->name,id)) {
+			then = g_ascii_strtoll(pref->value,NULL,10);
+			return (then ? then : now);
+		}
+	}
+	return now;
+}
+
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -1533,6 +1551,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		mm_channel->display_name = g_strdup(json_object_get_string_member(channel, "display_name"));
 		mm_channel->type = g_strdup(json_object_get_string_member(channel, "type"));
 		mm_channel->creator_id = g_strdup(json_object_get_string_member(channel, "creator_id"));
+		mm_channel->channel_approximate_view_time = mm_find_channel_approximate_view_time(ma, mm_channel->id);
 
 		const gchar *name = json_object_get_string_member(channel, "name");
 
@@ -1622,7 +1641,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 	mm_channels = g_list_sort(mm_channels, mm_compare_channels_by_display_name_int);
 	for (j = mm_channels; j != NULL; j=j->next) {
-
 		MattermostChannel *channel = j->data;
 		mm_set_group_chat(ma, channel->team_id, channel->name, channel->id);
 
@@ -1636,34 +1654,34 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			g_hash_table_insert(defaults, "id", g_strdup(channel->id));
 			g_hash_table_insert(defaults, "creator_id", g_strdup(channel->creator_id));
 			g_hash_table_insert(defaults, "type", g_strdup(channel->type));
+			g_hash_table_insert(defaults, "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,(channel->channel_approximate_view_time)));
 			if (channel->type && *(channel->type) != MATTERMOST_CHANNEL_GROUP) {
 				g_hash_table_insert(defaults, "name", g_strconcat(channel->name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, channel->team_id), NULL));
 				alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
 			} else {
 				g_hash_table_insert(defaults, "name", g_strdup(channel->name));
 				alias = g_strdup(channel->display_name);
-
-				chat = purple_chat_new(ma->account, alias, defaults);
-				purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
-				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
-				purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
-
-				purple_chat_set_alias(chat, alias);
-
-				g_hash_table_replace(ma->group_chats, g_strdup(channel->id), g_strdup(channel->name));
-				g_hash_table_replace(ma->group_chats_rev, g_strdup(channel->name), g_strdup(channel->id));
-
-				if (channel->creator_id) {
-					g_hash_table_replace(ma->group_chats_creators, g_strdup(channel->id), g_strdup(channel->creator_id));
 			}
+			
+			chat = purple_chat_new(ma->account, alias, defaults);
+			purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
+			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", autojoin);
+			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
 
+			purple_chat_set_alias(chat, alias);
+			g_hash_table_replace(ma->group_chats, g_strdup(channel->id), g_strdup(channel->name));
+			g_hash_table_replace(ma->group_chats_rev, g_strdup(channel->name), g_strdup(channel->id));
+
+			if (channel->creator_id) {
+				g_hash_table_replace(ma->group_chats_creators, g_strdup(channel->id), g_strdup(channel->creator_id));
+			}
 			g_free(alias);
-			}
 		} else {
 			PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 			if (chatconv) {
 			//FIXME: we read history once for each team for all group channels .. uh oh ...
-				mm_get_history_of_room(ma, channel, ma->last_load_last_message_timestamp);
+				mm_get_history_of_room(ma, channel, -1);
+				//ma->last_load_last_message_timestamp);
 			}
 		}
 
@@ -4147,8 +4165,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	MattermostChannel *channel = user_data;
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
 	PurpleGroup *default_group = mm_get_or_create_default_group();
-	const gchar *creator_id = g_hash_table_lookup(ma->group_chats_creators, channel->id);
-
+	
 	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
 		if (json_object_get_int_member(json_node_get_object(node), "status_code") >= 400) {
 			purple_notify_error(ma->pc, "Error", "Error getting Mattermost Channel users", json_object_get_string_member(json_node_get_object(node), "message"), purple_request_cpar_from_connection(ma->pc));
@@ -4192,7 +4209,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 			if (chatconv != NULL) {
 				PurpleChatUserFlags flags = mm_role_to_purple_flag(ma, roles);
-				if (purple_strequal(creator_id, user_id)) {
+				if (purple_strequal(channel->creator_id, user_id)) {
 					flags |= PURPLE_CHAT_USER_OP;
 				}
 				users_list = g_list_prepend(users_list, g_strdup(username));
@@ -4213,9 +4230,9 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		//g_list_free(users);
 //	}
 
-	if (ma->last_load_last_message_timestamp > 0) {
+	//if (ma->last_load_last_message_timestamp > 0) {
 		mm_get_history_of_room(ma, channel, -1);
-	}
+	//}
 
 	mm_g_free_mattermost_channel(channel);
 }
@@ -4302,7 +4319,9 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	gchar *url;
 	
 	if (since < 0) {
-		since = mm_get_room_last_timestamp(ma, channel->id);
+		since = channel->channel_approximate_view_time ? channel->channel_approximate_view_time : time(NULL);
+		
+		//since = mm_get_room_last_timestamp(ma, channel->id);
 	}
 
 	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/posts?since=%" G_GINT64_FORMAT, channel->id, since);
@@ -4359,6 +4378,8 @@ mm_got_room_info(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 			//BUG: pidgin 2 does not resize conv window field
 			//should be called before purple_conversation_present();	
 		}
+	channel->creator_id = g_strdup(json_object_get_string_member(obj, "creator_id"));
+	//TODO: get last_post_at and use ?
 	}
 
 	mm_get_users_of_room(ma, channel);
