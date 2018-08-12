@@ -1199,6 +1199,26 @@ mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
 	return g_string_free(url, FALSE);
 }
 
+static gboolean 
+mm_check_mattermost_response(MattermostAccount *ma, JsonNode *node, gchar *errtitle, gchar *errtext, gboolean show)
+{
+	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
+		JsonObject *response = json_node_get_object(node);
+		if (json_object_get_int_member(response, "status_code") >= 400) {
+			if (show) {
+				purple_notify_error(ma->pc, errtitle, errtext, json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+			}
+		return FALSE;
+		}
+		return TRUE;
+	}
+	if (json_node_get_node_type(node) == JSON_NODE_ARRAY) {
+		return TRUE;
+}
+	purple_notify_error(ma->pc, _("Error"), _("Cannot parse Mattermost reply"), _("(not json object or array)"), purple_request_cpar_from_connection(ma->pc));
+	return FALSE;
+}
+
 static void
 mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const gchar *postdata, MattermostProxyCallbackFunc callback, gpointer user_data)
 {
@@ -1516,19 +1536,20 @@ mm_channel_is_hidden(MattermostAccount *ma, const gchar *id)
 static gint64
 mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 {
-	GList *prefs;
-	gint64 now = g_get_real_time() / 1000;
-	gint64 then = 0;
+//	GList *prefs;
+	gint64 now = (g_get_real_time() / 1000); // -(60*60*24*3*1000); //(- 3 days for debug, remove !)
+//	gint64 then = 0;
 
-	if (!id) return now;
+//	if (!id) return now;
 
-	for (prefs=ma->user_prefs; prefs != NULL; prefs = g_list_next(prefs)) {
-		MattermostUserPref *pref = prefs->data;
-		if (purple_strequal(pref->category,"channel_approximate_view_time") && purple_strequal(pref->name,id)) {
-			then = g_ascii_strtoll(pref->value,NULL,10);
-			return (then ? then : now);
-		}
-	}
+//OK, so this does not work as expected in MM server 5.0 .. lets do timekeeping ourselves.
+//	for (prefs=ma->user_prefs; prefs != NULL; prefs = g_list_next(prefs)) {
+//		MattermostUserPref *pref = prefs->data;
+//		if (purple_strequal(pref->category,"channel_approximate_view_time") && purple_strequal(pref->name,id)) {
+//			then = g_ascii_strtoll(pref->value,NULL,10);
+//			return (then ? then : now);
+//		}
+//	}
 	return now;
 }
 
@@ -1537,6 +1558,9 @@ static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	gchar *team_id = user_data;
+
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost channels"),TRUE)) return;
+
 	JsonArray *channels = json_node_get_array(node);
 	guint i, len = json_array_get_length(channels);
 	GList *mm_users = NULL;
@@ -1680,12 +1704,12 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			}
 			g_free(alias);
 		} else {
-			PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
-			if (chatconv) {
-			//FIXME: we read history once for each team for all group channels .. uh oh ...
+			// this chat exists already, check history.
+			//PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel->id));
+			// get history of a room that we have active conversation with.
+			//if (chatconv) {
 				mm_get_history_of_room(ma, channel, -1);
-				//ma->last_load_last_message_timestamp);
-			}
+			//}
 		}
 
 	}
@@ -1776,6 +1800,8 @@ mm_about_myself(PurpleProtocolAction *action)
 static void
 mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost teams"),TRUE)) { return; };
+
 	JsonArray *teams = json_node_get_array(node);
 	guint i, len = json_array_get_length(teams);
 
@@ -1831,12 +1857,9 @@ mm_set_user_blist(MattermostAccount *ma, MattermostUser *mu, PurpleBuddy *buddy)
 static void
 mm_info_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	JsonObject *user = json_node_get_object(node);
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost user information"),TRUE)) return;
 
-	if (json_object_get_int_member(user, "status_code") >= 400) {
-		purple_notify_error(ma->pc, "Error", "Error getting Information for User", json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
-		return;
-	}
+	JsonObject *user = json_node_get_object(node);
 
 	PurpleBuddy *buddy = user_data;
 	MattermostUser *mu = g_new0(MattermostUser, 1);
@@ -1898,13 +1921,7 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
 static void 
 mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	JsonObject *response = json_node_get_object(node);
-
-	if (json_object_get_int_member(response, "status_code") >= 400) {
-		// do not report error to UI ?: may be called from websocket callback
-		// TODO: improve
-		return;
-	}
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost channel information"),TRUE)) return;
 
 	JsonObject *channel = json_node_get_object(node);
 	const gchar *id = json_object_get_string_member(channel, "id");
@@ -1994,13 +2011,8 @@ static MattermostUser *mm_user_from_json(MattermostAccount *ma, JsonObject *user
 static void
 mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	JsonObject *response = json_node_get_object(node);
 
-	if (json_object_get_int_member(response, "status_code") >= 400) {
-		// do not report error to UI: may be called from websocket callback
-		// TODO: improve
-		return;
-	}
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost users list"),TRUE)) return;
 
 	PurpleGroup *default_group = mm_get_or_create_default_group();
 	MattermostUser *mm_user = NULL;
@@ -2038,6 +2050,11 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		if (buddy == NULL) {
 			buddy = purple_buddy_new(ma->account, mm_user->username, NULL);
 			purple_blist_add_buddy(buddy, NULL, default_group, NULL);
+		} else {
+			MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
+			tmpchannel->id = g_strdup(mm_user->room_id);
+			mm_get_history_of_room(ma, tmpchannel, -1);
+			//FIXME: GFREE THAT !
 		}
 
 		if (mm_user->user_id && mm_user->username) {
@@ -2061,6 +2078,7 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 
 		mm_get_avatar(ma,buddy);
 		mm_refresh_statuses(ma, mm_user->user_id);
+
 	}
 	g_list_free_full(user_data, mm_g_free_mattermost_user);
 }
@@ -2185,14 +2203,7 @@ mm_save_user_pref_response(MattermostAccount *ma, JsonNode *node, gpointer user_
 {
 	MattermostUserPref *pref = user_data;
 	g_free(pref);
-
-	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
-		JsonObject *response = json_node_get_object(node);
-		if (json_object_get_int_member(response, "status_code") >= 400) {
-			purple_notify_error(ma->pc, _("Save Preferences Error"), _("There was an error saving user preferences"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
-		return;
-		}
-	}
+	mm_check_mattermost_response(ma,node,_("Error"),_("Error saving Mattermost user preferences"),TRUE);
 }
 
 static void
@@ -2272,13 +2283,8 @@ mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
 static void
 mm_get_user_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer userdata)
 {
-	if (json_node_get_node_type(node) == JSON_NODE_OBJECT) {
-		JsonObject *response = json_node_get_object(node);
-		if (json_object_get_int_member(response, "status_code") >= 400) {
-			//NOTE: Do not raise error: preferences can be empty and that's OK.
-			return;
-		}
-	} else {
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost user preferences"),TRUE)) return;
+
 		JsonArray *arr = json_node_get_array(node);
 		GList *prefs = json_array_get_elements(arr);
 		GList *i;
@@ -2297,7 +2303,6 @@ mm_get_user_prefs_response(MattermostAccount *ma, JsonNode *node, gpointer userd
 			pref->value = g_strdup(json_object_get_string_member(tmppref, "value"));
 			ma->user_prefs = g_list_prepend(ma->user_prefs,pref);
 		}
-	}
 }
 
 
@@ -2331,14 +2336,14 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonObject *response;
 	gboolean gitlabauth = FALSE;
 
-    if (node == NULL) {
+	if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
 		return;
 	}
 
 	response = json_node_get_object(node);
 
-    if (json_object_get_int_member(response, "status_code") >= 400) {
+	if (json_object_get_int_member(response, "status_code") >= 400) {
 		if (purple_account_get_bool(ma->account, "use-mmauthtoken", FALSE)) {
 			gitlabauth = TRUE;
 		}
@@ -2515,6 +2520,7 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 	MattermostFile *mmfile = user_data;
 	gchar *anchor;
 
+//todo: if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost file metadata"),TRUE)) return;
 	if (json_object_get_int_member(response, "status_code") >= 400) {
 		anchor = g_strdup(mmfile->uri);
 	} else {
@@ -2672,7 +2678,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	}
 
 	if (use_username == NULL) {
-		use_username=g_strdup("(unknown)");
+		use_username=g_strdup("[unknown]");
 	}
 
 	if (!g_hash_table_contains(ma->channel_teams, channel_id)) {
@@ -4245,7 +4251,7 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 //	}
 
 	//if (ma->last_load_last_message_timestamp > 0) {
-		mm_get_history_of_room(ma, channel, -1);
+		//mm_get_history_of_room(ma, channel, -1);
 	//}
 
 	mm_g_free_mattermost_channel(channel);
@@ -4275,29 +4281,68 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 	JsonObject *posts = json_object_get_object_member(obj, "posts");
 	JsonArray *order = json_object_get_array_member(obj, "order");
 
-	gint64 last_message_timestamp = 0;
+	//gint64 last_message_timestamp = 0;
 	gint i, len = json_array_get_length(order);
 
+	if (len > 0) {
+		if (!g_hash_table_lookup(ma->one_to_ones,channel_id)) { // not one to one 
+			PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+			if (!chatconv) {
+			// open chat here
+//printf ("open chat for: %s\n",channel_id);
+				PurpleChat *chat = mm_purple_blist_find_chat(ma,channel_id);
+				if (chat) {
+
+					GHashTable *components = purple_chat_get_components(chat);
+					gchar *team_id = g_hash_table_lookup(components, "team_id");
+					gchar *alias;
+					if (team_id) {
+						alias = g_strconcat(g_hash_table_lookup(ma->group_chats,channel_id), MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+					} else {
+						alias = g_strdup(g_hash_table_lookup(ma->group_chats,channel_id));
+					}
+
+//printf ("OPEN: %s|%s|%s\n",channel_id,alias,team_id); //FIXME: we have channel_name instead of channel_display_name here ...
+//exit (1);
+					PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel_id), alias);
+					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel_id));
+					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(team_id));
+					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "name", g_strdup(alias));
+					purple_conversation_present(PURPLE_CONVERSATION(conv));
+
+				//MattermostChannel *tmpch = g_new0(MattermostChannel,1);
+				//tmpch->id = g_strdup(channel->id);
+				//tmpch->name = g_strdup(alias);
+				//tmpch->team_id = g_strdup(channel->team_id);
+	
+				//mm_join_room(ma, tmpch);
+				}
+			}
+		}
+		// for IMCONV pidgin opens the conversation by itself.
+  }
 	for (i = len - 1; i >= 0; i--) {
 		const gchar *post_id = json_array_get_string_element(order, i);
 		JsonObject *post = json_object_get_object_member(posts, post_id);
 
-		last_message_timestamp = mm_process_room_message(ma, post, NULL);
+		/*last_message_timestamp = */mm_process_room_message(ma, post, NULL);
 
 	}
 
-	if (last_message_timestamp > 0) {
-	
-		PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-		if (chatconv) {
-			PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id); 
-			if (chat) {
-				purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
-			}
-		} else {
-			//IMCONV		 set channel_approximate_view_time while calling
-		}
-	}
+//FIXME:  nonono: we displayed conv here, but did user read ?
+	//if (last_message_timestamp > 0) {
+	//gint64 now = g_get_real_time() / 1000;
+		//PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
+	//	if (chatconv) {
+	//		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id); 
+	//		if (chat) {
+   //     
+		//		purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT, now));
+		//}
+		//if (imconv) {
+    //
+    //}
+	//}
 
 	g_free(channel_id);
 }
@@ -4344,23 +4389,32 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 {
 	gchar *url;
 	
+
+//JAREK
+
+
+//JAREK
 	if (since < 0) {
+ const gchar *tmptime = NULL;
+
 		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
 		if (chat) {
-			const gchar *tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
-			if(!tmptime) {
-				//FIXME -> why null ? 
-				tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000) - 60*60*24);
-			}
-			channel->channel_approximate_view_time = g_ascii_strtoll(tmptime, NULL, 10);
+			tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
 		} else {
-			PurpleIMConversation *conv = purple_conversations_find_im_with_account(g_hash_table_lookup(ma->one_to_ones,channel->id),ma->account);
-			if (conv) {
-				//IMCONV: called with since set properly
-			}	
+     PurpleBuddy *buddy = purple_blist_find_buddy(ma->account,g_hash_table_lookup(ma->one_to_ones,channel->id));
+     if (buddy) {
+		  tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"channel_approximate_view_time");
 		}
-		since = channel->channel_approximate_view_time ? channel->channel_approximate_view_time : g_get_real_time()/1000;
-	}
+    }
+
+if(!tmptime) {
+				//FIXME -> why null ? 
+				tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000)); // now.
+}
+     since = g_ascii_strtoll(tmptime, NULL, 10);
+
+
+}
 
 	//FIXME: implement paged query ?
 	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/posts?page=0&per_page=200&since=%" G_GINT64_FORMAT, channel->id, since);
@@ -4540,6 +4594,28 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	mm_join_room(ma, channel);
 }
 
+static void
+mm_mark_room_messages_read_timeout_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+//reply contains 'last_viewed_at_times' which does not correspond to our activity ?
+//also prefs chanel_approximate_view_time is not updated ?
+// do we miss something ? do we need to update this ourselves ?.. for now lets do our own timekeeping.
+  gchar *channel_id = user_data;
+  gint64 now = g_get_real_time()/1000;
+	PurpleChat *chat = mm_purple_blist_find_chat(ma, channel_id); 
+	if (chat) {
+			purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,now));
+  } else {
+    const gchar *username = g_hash_table_lookup(ma->one_to_ones,channel_id);
+    if (username) {
+      PurpleBuddy *buddy = purple_blist_find_buddy(ma->account, username);
+      if (buddy) {
+        purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,now));
+      }
+    }
+  }
+} 
+
 static gboolean
 mm_mark_room_messages_read_timeout(gpointer userdata)
 {
@@ -4557,7 +4633,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 	if (!ma->current_channel_id) {
 		return FALSE;
 	}
-	PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(ma->current_channel_id));
+/*	PurpleChatConversation *chatconv=purple_conversations_find_chat(ma->pc, g_str_hash(ma->current_channel_id));
 	if (chatconv) {
 		PurpleChat *chat = mm_purple_blist_find_chat(ma, ma->current_channel_id); 
 		if (chat) {
@@ -4576,6 +4652,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 						tmpchannel->id = g_strdup(ma->current_channel_id);
 						//FIXME: null ?
 						gint64 tmptime = g_ascii_strtoll(purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time"), NULL, 10);
+printf ("FROM mark_room_messages_read_timeout\n");
 						mm_get_history_of_room(ma, tmpchannel, tmptime);
 
 						purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,g_get_real_time()/1000));
@@ -4586,11 +4663,12 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 			}
 		}
 	}
+*/
 	g_free(ma->last_channel_id);
 	ma->last_channel_id = g_strdup(ma->current_channel_id);
 
 	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/members/me/view");
-	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, NULL, NULL);	//TODO: check error
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_mark_room_messages_read_timeout_response, g_strdup(ma->current_channel_id));
 	
 	g_free(postdata);
 	g_free(url);
