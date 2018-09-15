@@ -4359,6 +4359,14 @@ static void
 mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 {
 	gchar *url;
+
+	//no open chat conv. no need to read users, check history, if needed
+	//we come back here
+	if (purple_conversations_find_chat(ma->pc, g_str_hash(channel->id)) == NULL) {
+	channel->page_history = 0;
+	mm_get_history_of_room(ma, channel, -1);
+	return;
+	}
 	if (channel->page_users == MATTERMOST_MAX_PAGES) return; 
 	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users?in_channel=%s&page=%s&per_page=%s", channel->id,g_strdup_printf("%i",channel->page_users), g_strdup_printf("%i", MATTERMOST_USER_PAGE_SIZE));
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_users_of_room, channel);
@@ -4393,12 +4401,19 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 					gchar *team_id = g_hash_table_lookup(components, "team_id");
 					gchar *alias = g_hash_table_lookup(ma->aliases,channel->id);
 
-					//BUG: libpurple (rrhel 7) hangs here forever in gtk loop ????
+
 					PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel->id), alias);
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel->id));
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(team_id));
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "name", g_strdup(alias));
 					purple_conversation_present(PURPLE_CONVERSATION(conv));
+
+					//HERE we already went through mm_get_users_of_room but since 
+					//chat window was not open, user list is empty, need to do it again
+					//FIXME: this should be rewritten ...we call everything twice
+					channel->page_users = 0;
+					mm_get_users_of_room(ma, channel);
+					return;
 				}
 			}
 		}
@@ -4412,12 +4427,12 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 //FIXME: this recursion loops 'forever' on some channels... still to debug
 //       for now 200 posts will do.
-//	if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MAX_PAGES) {
-//		channel->page_history = channel->page_history + 1;
-//		mm_get_history_of_room(ma, channel, -1); // FIXME: that should be parametrized !
-//	} else {
+	if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MAX_PAGES) {
+		channel->page_history = channel->page_history + 1;
+		mm_get_history_of_room(ma, channel, -1); // FIXME: that should be parametrized !
+	} else {
 		mm_g_free_mattermost_channel(channel);
-//	}
+	}
 // for now we could just tell user...
 
 }
@@ -4499,7 +4514,11 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 
 	const gchar *alias = g_hash_table_lookup(ma->aliases,id);
 
+//BUG:hangs forever
+
 	chatconv = purple_serv_got_joined_chat(pc, id_hash, alias);//ALIAS ?
+//	purple_serv_got_chat_in(ma->pc, g_str_hash(id), "none", PURPLE_MESSAGE_SYSTEM, "no message", 0);
+
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "name", g_strdup(name));
