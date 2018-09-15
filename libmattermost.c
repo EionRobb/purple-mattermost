@@ -1535,12 +1535,12 @@ mm_channel_is_hidden(MattermostAccount *ma, const gchar *id)
 		if(purple_strequal(pref->name,id)) {
 			if(purple_strequal(pref->category,"direct_channel_show") || purple_strequal(pref->category,"group_channel_show")) {
 				if(purple_strequal(pref->value,"false")) {
-					return(TRUE);
+					return TRUE;
 				}
 			}
 		}
 	}
-	return(FALSE);
+	return FALSE;
 }
 
 static gint64
