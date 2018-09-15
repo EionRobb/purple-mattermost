@@ -23,10 +23,6 @@
 #define g_hash_table_contains(hash_table, key) g_hash_table_lookup_extended(hash_table, key, NULL, NULL)
 #endif /* 2.32.0 */
 
-#ifndef MATTERMOST_VERSION
-#define MATTERMOST_VERSION "v4"
-#endif
-
 static gboolean
 g_str_insensitive_equal(gconstpointer v1, gconstpointer v2)
 {
@@ -143,6 +139,7 @@ json_array_from_string(const gchar *str)
 #define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/mattermost-libpurple"
 
 #define MATTERMOST_USERAGENT "libpurple"
+#define MATTERMOST_API_EP "/api/v4"
 
 #define MATTERMOST_BUFFER_DEFAULT_SIZE 40960
 #define MATTERMOST_USER_PAGE_SIZE 200 // 200 is MAX. in paged queries (and default)
@@ -415,6 +412,7 @@ typedef struct {
 	
 	gchar *username;
 	gchar *server;
+	gchar *api_endpoint;
 	
 	PurpleSslConnection *websocket;
 	guint websocket_inpa;
@@ -1176,6 +1174,8 @@ mm_build_url(MattermostAccount *ma, const gchar *url_format, ...)
 	}
 	g_string_append(url, ma->server);
 	
+	g_string_append(url, ma->api_endpoint);
+
 	va_start(args, url_format);
 	for(last_cur = cur = url_format; cur; last_cur = cur, cur = strchr(cur, '%')) {
 		g_string_append_len(url, last_cur, cur - last_cur);
@@ -1760,7 +1760,7 @@ mm_get_open_channels_for_team(MattermostAccount *ma, const gchar *team_id)
 	gchar *url;
 
 	//FIXME: v4 API bug ? 'me' instead of user_id does not work here ? ...
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/%s/teams/%s/channels", ma->self->user_id, team_id);
+	url = mm_build_url(ma,"/users/%s/teams/%s/channels", ma->self->user_id, team_id);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_add_channels_to_blist, g_strdup(team_id));
 	g_free(url);
 }
@@ -1947,7 +1947,7 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
 		buddy = purple_buddy_new(ma->account, username, NULL);
 	}
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/username/%s", username);
+	url = mm_build_url(ma,"/users/username/%s", username);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_info_response, buddy);
 	g_free(url);
 }
@@ -2051,7 +2051,7 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *i
 
 	if (!joined) ma->joined_channels = g_list_prepend(ma->joined_channels, g_strdup(id));
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s",id);
+	url = mm_build_url(ma,"/channels/%s",id);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_get_channel_by_id_response, g_strdup(team_id));
 	g_free(url);
 }
@@ -2177,7 +2177,7 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 
 	postdata = json_array_to_string(data);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/ids");
+	url = mm_build_url(ma,"/users/ids");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_get_users_by_ids_response, ids);
 
 	json_array_unref(data);
@@ -2258,7 +2258,7 @@ mm_get_teams(MattermostAccount *ma)
 
 	mm_start_socket(ma);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/teams"); 
+	url = mm_build_url(ma,"/users/me/teams"); 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_teams, NULL);
 
 	g_free(url);
@@ -2289,7 +2289,7 @@ mm_save_user_pref(MattermostAccount *ma, MattermostUserPref *pref)
 	postdata = json_array_to_string(data);
 	
 	if (purple_strequal(pref->category,"direct_channel_show") || purple_strequal(pref->category,"group_channel_show")) {
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences");
+		url = mm_build_url(ma,"/users/me/preferences");
 		mm_fetch_url(ma, url, MATTERMOST_HTTP_PUT, postdata, mm_save_user_pref_response, pref);
 	}
 
@@ -2391,7 +2391,7 @@ mm_get_user_prefs(MattermostAccount *ma)
 //		 channel_open_time { name:channel_id,value:unixseconds}
 
 	gchar *url;
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/preferences");
+	url = mm_build_url(ma,"/users/me/preferences");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_get_user_prefs_response, NULL);
 	g_free(url);
 
@@ -2494,7 +2494,7 @@ static void
 mm_get_me(MattermostAccount *ma)
 {
 	gchar *url;
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me");
+	url = mm_build_url(ma,"/users/me");
 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_me_response, NULL);
 	g_free(url);
@@ -2632,7 +2632,7 @@ mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 	gchar *url;
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/files/%s/info", mmfile->mmchlink->file_id);
+	url = mm_build_url(ma,"/files/%s/info", mmfile->mmchlink->file_id);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_file_metadata_response, mmfile);
 
 	g_free(url);
@@ -2649,7 +2649,7 @@ mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, cons
 	info->sender = g_strdup(username);
 	info->timestamp = timestamp;
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/files/%s/link", file_id);
+	url = mm_build_url(ma,"/files/%s/link", file_id);
 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_fetch_file_metadata, info);
 
@@ -3438,7 +3438,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		//mmtrl->team_desc = g_strdup(_(": Joined channels"));
 		//mmtrl->roomlist = roomlist;
 
-		//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/teams/%s/channels", team_id);
+		//url = mm_build_url(ma,"/users/me/teams/%s/channels", team_id);
 		//mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_roomlist_got_list, mmtrl);
 		//g_free(url);
 		
@@ -3450,7 +3450,7 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		mmtrl->team_id = g_strdup(team_id);
 		mmtrl->team_desc = g_strdup(_(": More public channels"));
 		mmtrl->roomlist = roomlist;
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels", team_id); 
+		url = mm_build_url(ma,"/teams/%s/channels", team_id); 
 		mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_roomlist_got_list, mmtrl);
 		g_free(url);
 		
@@ -3516,7 +3516,7 @@ mm_set_status(PurpleAccount *account, PurpleStatus *status)
 	json_object_set_string_member(data, "status", setstatus);
 	postdata = json_object_to_string(data);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/me/status");
+	url = mm_build_url(ma,"/users/me/status");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_PUT, postdata, NULL, NULL);
 	g_free(url);
 	
@@ -3650,6 +3650,8 @@ mm_login(PurpleAccount *account)
 	ma->server = g_strdup(userparts[1]);
 	g_strfreev(userparts);
 
+	ma->api_endpoint = g_strdup(MATTERMOST_API_EP);
+
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
 	//Build the initial hash tables from the current buddy list
@@ -3672,7 +3674,7 @@ mm_login(PurpleAccount *account)
 			
 			postdata = json_object_to_string(data);
 			
-			url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/login");
+			url = mm_build_url(ma,"/users/login");
 			mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_login_response, NULL);
 			
 			g_free(postdata);
@@ -4041,8 +4043,8 @@ mm_socket_send_headers(MattermostAccount *ma)
 
 	cookies = mm_cookies_to_string(ma);
 
-//	websocket_header = g_strdup_printf("GET /api/" MATTERMOST_VERSION "/users/websocket HTTP/1.1\r\n"
-	websocket_header = g_strdup_printf("GET /api/" MATTERMOST_VERSION "/websocket HTTP/1.0\r\n"
+//	websocket_header = g_strdup_printf("GET %s/users/websocket HTTP/1.1\r\n"
+	websocket_header = g_strdup_printf("GET %s/websocket HTTP/1.0\r\n"
 							"Host: %s\r\n"
 							"Connection: Upgrade\r\n"
 							"Pragma: no-cache\r\n"
@@ -4054,7 +4056,7 @@ mm_socket_send_headers(MattermostAccount *ma)
 							"Cookie: %s\r\n"
 							"Authorization: Bearer %s\r\n"
 							//"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"
-							"\r\n", ma->server,
+							"\r\n", ma->api_endpoint, ma->server,
 							websocket_key, cookies, ma->session_token);
 
 	mm_socket_write(ma, websocket_header, strlen(websocket_header));
@@ -4170,7 +4172,7 @@ mm_chat_leave(PurpleConnection *pc, int id)
 		channel_id = purple_conversation_get_name(PURPLE_CONVERSATION(chatconv));
 	}
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/members/%s", channel_id, ma->self->user_id);
+	url = mm_build_url(ma,"/channels/%s/members/%s", channel_id, ma->self->user_id);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_DELETE, NULL, NULL, NULL);
 
 	g_free(url);
@@ -4202,7 +4204,7 @@ mm_chat_invite(PurpleConnection *pc, int id, const char *message, const char *wh
 	if (user_id == NULL) {
 		//TODO search for user
 		
-		//  /api/" MATTERMOST_VERSION "/users/search
+		//  /users/search
 		
 		//"term", buddy_name
 		//"allow_inactive", TRUE
@@ -4215,7 +4217,7 @@ mm_chat_invite(PurpleConnection *pc, int id, const char *message, const char *wh
 
 	postdata = json_object_to_string(data);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/members", channel_id);
+	url = mm_build_url(ma,"/channels/%s/members", channel_id);
 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, NULL, NULL);
 
@@ -4361,7 +4363,7 @@ mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 
 	if (channel->page_users == MATTERMOST_MAX_PAGES) return; 
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users?in_channel=%s&page=%s&per_page=%s", channel->id,g_strdup_printf("%i",channel->page_users), g_strdup_printf("%i", MATTERMOST_USER_PAGE_SIZE));
+	url = mm_build_url(ma,"/users?in_channel=%s&page=%s&per_page=%s", channel->id,g_strdup_printf("%i",channel->page_users), g_strdup_printf("%i", MATTERMOST_USER_PAGE_SIZE));
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_users_of_room, channel);
 	g_free(url);
 }
@@ -4465,7 +4467,7 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	since = g_ascii_strtoll(tmptime, NULL, 10);
 	}
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
+	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_history_of_room, channel);
 	g_free(url);
 }
@@ -4579,7 +4581,7 @@ mm_mark_room_messages_read_timeout(gpointer userdata)
 	g_free(ma->last_channel_id);
 	ma->last_channel_id = g_strdup(ma->current_channel_id);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/members/me/view");
+	url = mm_build_url(ma,"/channels/members/me/view");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_mark_room_messages_read_timeout_response, g_strdup(ma->current_channel_id));
 	
 	g_free(postdata);
@@ -4740,8 +4742,8 @@ mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const 
 
 	postdata = json_object_to_string(data);
 
-	//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/%s/posts/create", team_id, channel_id);
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/posts");
+	//url = mm_build_url(ma,"/teams/%s/channels/%s/posts/create", team_id, channel_id);
+	url = mm_build_url(ma,"/posts");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_conversation_send_message_response, NULL); //todo look at callback
 
 	g_free(postdata);
@@ -4863,7 +4865,7 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 		json_array_add_string_element(data, ma->self->user_id); 
 
 		postdata = json_array_to_string(data);
-		url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/direct");
+		url = mm_build_url(ma,"/channels/direct");
 		mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_created_direct_message_send, msg);
 		g_free(url);
 
@@ -4908,7 +4910,7 @@ mm_chat_set_header_purpose(PurpleConnection *pc, int id, const char *topic, cons
 		json_object_set_string_member(data, "purpose", topic);
 	}
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/%s", channel_id);
+	url = mm_build_url(ma,"/channels/%s", channel_id);
 
 	postdata = json_object_to_string(data);
 
@@ -5064,7 +5066,7 @@ mm_search_users_text(MattermostAccount *ma, const gchar *text)
 
 	postdata = json_object_to_string(obj);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/search");
+	url = mm_build_url(ma,"/users/search");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, mm_got_add_buddy_search, g_strdup(text));
 	g_free(url);
 
@@ -5181,7 +5183,7 @@ mm_got_avatar(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 static void
 mm_get_avatar(MattermostAccount *ma, PurpleBuddy *buddy)
 {
-	gchar *url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
+	gchar *url = mm_build_url(ma,"/users/%s/image", purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id"));
 	const gchar *buddy_name = g_strdup(purple_buddy_get_name(buddy));
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_avatar, (gpointer) buddy_name);
 	g_free(url);
@@ -5268,8 +5270,8 @@ mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy)
 	//postdata = json_object_to_string(data);
 
 	postdata = json_array_to_string(data);
-	//url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/teams/%s/channels/create_direct", mm_get_first_team_id(ma)); 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/channels/direct");
+	//url = mm_build_url(ma,"/teams/%s/channels/create_direct", mm_get_first_team_id(ma)); 
+	url = mm_build_url(ma,"/channels/direct");
 	//FIXME:is this buddy on that team ? 
 	//		We need to get info about user first
 	//		but still on which team are we on now ?
@@ -5304,7 +5306,7 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 		//Search for user
 		// if they've entered what we think is a username, sanitise it
 		if (!strchr(buddy_name, ' ') && !strchr(buddy_name, '@')) {
-			url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users/username/%s", buddy_name);
+			url = mm_build_url(ma,"/users/username/%s", buddy_name);
 			mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_add_buddy_user, buddy);
 			g_free(url);
 		} else {
@@ -5528,7 +5530,7 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	json_object_set_string_member(data, "channel_id", channel_id);
 	postdata = json_object_to_string(data);
 
-	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/commands/execute");
+	url = mm_build_url(ma,"/commands/execute");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, NULL, NULL);
 	g_free(url);
 
