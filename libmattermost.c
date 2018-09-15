@@ -1248,7 +1248,6 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	purple_debug_info("mattermost", "Fetching url %s\n", url);
 
 #if PURPLE_VERSION_CHECK(3, 0, 0)
-	//FIXME: is this HTTP/1.0 ? with HTTP/1.1 Mattermost server v5 sends chunked data ..
 
 	PurpleHttpRequest *request = purple_http_request_new(url);
 	purple_http_request_header_set(request, "Accept", "*/*");
