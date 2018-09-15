@@ -1428,7 +1428,7 @@ static void mm_join_room(MattermostAccount *ma, MattermostChannel *channel);
 static PurpleChatUserFlags mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist);
 
 static void mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *id);
-
+static void mm_mark_room_messages_read_timeout_response(MattermostAccount *ma, JsonNode *node, gpointer user_data);
 int
 mm_compare_users_by_id_int(gconstpointer a, gconstpointer b)
 {
@@ -4360,14 +4360,8 @@ mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 {
 	gchar *url;
 
-	//no open chat conv. no need to read users, check history, if needed
-	//we come back here
-	if (purple_conversations_find_chat(ma->pc, g_str_hash(channel->id)) == NULL) {
-	channel->page_history = 0;
-	mm_get_history_of_room(ma, channel, -1);
-	return;
-	}
 	if (channel->page_users == MATTERMOST_MAX_PAGES) return; 
+
 	url = mm_build_url(ma, "/api/" MATTERMOST_VERSION "/users?in_channel=%s&page=%s&per_page=%s", channel->id,g_strdup_printf("%i",channel->page_users), g_strdup_printf("%i", MATTERMOST_USER_PAGE_SIZE));
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_got_users_of_room, channel);
 	g_free(url);
@@ -4410,7 +4404,7 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 					//HERE we already went through mm_get_users_of_room but since 
 					//chat window was not open, user list is empty, need to do it again
-					//FIXME: this should be rewritten ...we call everything twice
+					//FIXME: this should be rewritten ...we call users read twice per channel
 					channel->page_users = 0;
 					mm_get_users_of_room(ma, channel);
 					return;
@@ -4419,20 +4413,27 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 		}
 		// for IMCONV pidgin opens the conversation by itself.
   }
+
+
 	for (i = len - 1; i >= 0; i--) {
 		const gchar *post_id = json_array_get_string_element(order, i);
 		JsonObject *post = json_object_get_object_member(posts, post_id);
 		mm_process_room_message(ma, post, NULL);
 	}
 
-//FIXME: this recursion loops 'forever' on some channels... still to debug
-//       for now 200 posts will do.
-	if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MAX_PAGES) {
-		channel->page_history = channel->page_history + 1;
-		mm_get_history_of_room(ma, channel, -1); // FIXME: that should be parametrized !
-	} else {
+// BUG?: my mattermost server returns history unpaged, all messages 
+// 'since' not respecting page size ??
+//if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MAX_PAGES) {
+//		channel->page_history = channel->page_history + 1;
+//
+//		mm_get_history_of_room(ma, channel, -1); // FIXME: that should be parametrized !
+//	} else {
+		channel->page_history = MATTERMOST_MAX_PAGES;
+		// history will be stored in purple log, even if channel not read now, avoid re-reading later.
+		mm_mark_room_messages_read_timeout_response(ma, NULL, channel->id);
+
 		mm_g_free_mattermost_channel(channel);
-	}
+//	}
 // for now we could just tell user...
 
 }
