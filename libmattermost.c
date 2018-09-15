@@ -3754,6 +3754,7 @@ mm_close(PurpleConnection *pc)
 	g_free(ma->current_channel_id); ma->current_channel_id = NULL;
 	g_free(ma->username); ma->username = NULL;
 	g_free(ma->server); ma->server = NULL;
+	g_free(ma->api_endpoint); ma->api_endpoint = NULL;
 	g_free(ma->frame); ma->frame = NULL;
 	g_free(ma->session_token); ma->session_token = NULL;
 	g_free(ma->channel); ma->channel = NULL;
