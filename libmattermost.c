@@ -1980,6 +1980,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 		alias = g_strdup(display_name);
 	}
  
+
 	if (mm_purple_blist_find_chat(ma, id) == NULL) {
 
 		PurpleChat *chat = NULL;
@@ -2048,7 +2049,6 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *i
 	// this is rather a workaround .. reimplement the workflow ? ...
 	if (joined && purple_conv_chat_get_users(purple_conversations_find_chat(ma->pc, g_str_hash(id))) != NULL) {
 		return; } 
-
 	if (!joined) ma->joined_channels = g_list_prepend(ma->joined_channels, g_strdup(id));
 
 	url = mm_build_url(ma,"/channels/%s",id);
@@ -2810,9 +2810,16 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 					// Group chat message
 					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
 
+					// purple_serv_got_chat_in does not set chat window alias ...
+
+					gchar *alias = g_hash_table_lookup(ma->aliases,channel_id);
+					if (alias && chatconv) {
+
+						purple_conversation_set_name(PURPLE_CONVERSATION(chatconv),alias);
+					}
+
 					purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), use_username, msg_flags, msg_out, timestamp);
-					//FIXME: Jarek - I'm lost above opens the chat conv. window if not opened ... but with 
-					//       tile being "name / team" name instead of "display_name / team name"
+
 					mm_get_channel_by_id(ma, g_hash_table_lookup(ma->channel_teams, channel_id), channel_id);
 						
 					g_free(msg_out);
@@ -4397,7 +4404,6 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 					gchar *team_id = g_hash_table_lookup(components, "team_id");
 					gchar *alias = g_hash_table_lookup(ma->aliases,channel->id);
 
-
 					PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel->id), alias);
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel->id));
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(team_id));
@@ -4516,8 +4522,6 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	}
 
 	const gchar *alias = g_hash_table_lookup(ma->aliases,id);
-
-//BUG:hangs forever
 
 	chatconv = purple_serv_got_joined_chat(pc, id_hash, alias);//ALIAS ?
 //	purple_serv_got_chat_in(ma->pc, g_str_hash(id), "none", PURPLE_MESSAGE_SYSTEM, "no message", 0);
