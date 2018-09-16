@@ -2873,6 +2873,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 static void
 mm_got_hello_user_statuses(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
+
 	JsonObject *obj = json_node_get_object(node);
 	JsonObject *data = json_object_get_object_member(obj, "data");
 	GList *ids = json_object_get_members(data);
@@ -3036,6 +3037,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 	JsonObject *obj = json_node_get_object(element_node);
 
 	const gchar *event = json_object_get_string_member(obj, "event");
+	const gchar *status = json_object_get_string_member(obj, "status");
 	JsonObject *data = json_object_get_object_member(obj, "data");
 	JsonObject *broadcast = json_object_get_object_member(obj, "broadcast");
 
@@ -3234,6 +3236,19 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 	// } else if (purple_strequal(event, "group_added") { //TODO: needed ? (preferences_changed -> group_channel_show handles it anyway ? 	
 	} else if (purple_strequal(event, "hello")) {
 		mm_refresh_statuses(ma, NULL); 
+	} else if (purple_strequal(event, "channel_viewed")) {
+		//we have marked it viewed already with purple_conversation_has_focus()
+	}	else if (event) {
+		purple_debug_info("mattermost", "unhandled event %s [%s]\n", status,json_object_to_string(obj));
+	} else if (purple_strequal(status,"OK")) { 
+		JsonNode *tmpjsonnode=json_node_new(JSON_NODE_OBJECT);
+		json_node_set_object(tmpjsonnode,obj);
+		mm_got_hello_user_statuses(ma, tmpjsonnode, NULL);
+		json_node_free(tmpjsonnode);
+	} else if (status) {
+		purple_debug_info("mattermost", "unhandled status %s [%s]\n", status,json_object_to_string(obj));
+	} else {
+		purple_debug_info("mattermost", "unhandled message [%s]\n", json_object_to_string(obj));
 	}
 }
 
