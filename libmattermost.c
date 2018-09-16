@@ -3067,7 +3067,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			
 			//type system_join_channel, channel_id is ""		
 			if (!purple_strequal(channel_id,"") && purple_strequal(ma->self->user_id, user_id)) {
-				mm_get_channel_by_id(ma, team_id, channel_id); //FIXME: we see no posts until pidgin restart 
+				mm_get_channel_by_id(ma, team_id, channel_id);
 
 			} else if (!purple_strequal(channel_id,"") && g_hash_table_lookup(ma->group_chats, channel_id)) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
@@ -3233,19 +3233,28 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 				purple_blist_remove_chat(chat);
 			}
 		}
-	// } else if (purple_strequal(event, "group_added") { //TODO: needed ? (preferences_changed -> group_channel_show handles it anyway ? 	
-	} else if (purple_strequal(event, "hello")) {
-		mm_refresh_statuses(ma, NULL); 
+	} else if (purple_strequal(event, "channel_converted")) {
+		//TODO: implement: remove & add to blist again (see above) or just change type ?
+	} else if (purple_strequal(event, "channel_updated")) {
+		//TODO: implement
 	} else if (purple_strequal(event, "channel_viewed")) {
 		//we have marked it viewed already with purple_conversation_has_focus()
+	} else if (purple_strequal(event, "hello")) {
+		mm_refresh_statuses(ma, NULL); 
 	}	else if (event) {
+		// can be one of: https://api.mattermost.com/#tag/WebSocket
 		purple_debug_info("mattermost", "unhandled event %s [%s]\n", status,json_object_to_string(obj));
+		//post_deleted, 
 	} else if (purple_strequal(status,"OK")) { 
+		//TODO: this can be a reply to client sending 'user_typing', 'get_statuses' or 'get_statuses_by_ids'
+		//      we dont know since would need to track seq number... so assume it was one of statuses replies...  
 		JsonNode *tmpjsonnode=json_node_new(JSON_NODE_OBJECT);
 		json_node_set_object(tmpjsonnode,obj);
 		mm_got_hello_user_statuses(ma, tmpjsonnode, NULL);
 		json_node_free(tmpjsonnode);
 	} else if (status) {
+		//TODO: this will be FAIL status in reply to 'user_typing', 'get_statuses' or 'get_statuses_by_ids'
+		//      we dont know since would need to track seq number... so just ignore it..
 		purple_debug_info("mattermost", "unhandled status %s [%s]\n", status,json_object_to_string(obj));
 	} else {
 		purple_debug_info("mattermost", "unhandled message [%s]\n", json_object_to_string(obj));
