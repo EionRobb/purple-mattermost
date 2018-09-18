@@ -4556,7 +4556,6 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	const gchar *alias = g_hash_table_lookup(ma->aliases,id);
 
 	chatconv = purple_serv_got_joined_chat(pc, id_hash, alias);//ALIAS ?
-//	purple_serv_got_chat_in(ma->pc, g_str_hash(id), "none", PURPLE_MESSAGE_SYSTEM, "no message", 0);
 
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "id", g_strdup(id));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "team_id", g_strdup(team_id));
@@ -4565,14 +4564,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "creator_id", g_strdup(creator_id));
 	purple_conversation_present(PURPLE_CONVERSATION(chatconv));
 
-	MattermostChannel *channel = g_new0(MattermostChannel,1);
-	channel->name = g_strdup(name);
-	channel->id = g_strdup(id);
-	channel->team_id = g_strdup(team_id);
-	channel->type = g_strdup(type);
-
 	mm_get_channel_by_id(ma,team_id,id);
-//	mm_join_room(ma, channel);
 }
 
 static void
