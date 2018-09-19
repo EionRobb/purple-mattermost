@@ -3743,11 +3743,7 @@ mm_close(PurpleConnection *pc)
 	g_queue_free(ma->received_message_queue);
 
 	while (ma->http_conns) {
-#	if !PURPLE_VERSION_CHECK(3, 0, 0)
-		purple_util_fetch_url_cancel(ma->http_conns->data);
-#	else
 		purple_http_conn_cancel(ma->http_conns->data);
-#	endif
 		ma->http_conns = g_slist_delete_link(ma->http_conns, ma->http_conns);
 	}
 
@@ -4949,8 +4945,6 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 		data = json_array_new();
 		json_array_add_string_element(data, user_id);
 		json_array_add_string_element(data, ma->self->user_id); 
-
-printf ("IMSEND: %s\n",message);
 
 		postdata = json_array_to_string(data);
 		url = mm_build_url(ma,"/channels/direct");
