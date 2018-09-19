@@ -147,6 +147,7 @@ json_array_from_string(const gchar *str)
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
 #define MATTERMOST_CHANNEL_SEPARATOR_VISUAL " / "
+#define MATTERMOST_CHANNEL_PRIVATE_VISUAL  "[P] "
 #define MATTERMOST_CHANNEL_SEPARATOR "---"
 #define MATTERMOST_CHANNEL_OPEN 'O'
 #define MATTERMOST_CHANNEL_PRIVATE 'P'
@@ -1405,6 +1406,20 @@ mm_get_alias(MattermostUser *mu)
 	return alias;
 }
 
+const gchar *
+mm_get_chat_alias(MattermostAccount *ma, MattermostChannel *ch)
+{
+	gchar *alias = NULL;
+	gchar *type = NULL;
+
+	type = g_strconcat((ch->type && purple_strequal(ch->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_PRIVATE))) ? MATTERMOST_CHANNEL_PRIVATE_VISUAL : "", NULL);
+
+	alias = g_strconcat(type, ch->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, ch->team_id), NULL);
+
+	g_free(type);
+
+	return alias;
+}
 static void mm_set_group_chat(MattermostAccount *ma, const gchar *team_id, const gchar *channel_name, const gchar *channel_id);
 
 // only non-changing values are channel_id and team_id !
@@ -1552,6 +1567,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			tmpchannel->team_id = g_hash_table_lookup(components, "team_id");
 			tmpchannel->name = g_hash_table_lookup(components, "name");
 			tmpchannel->type = g_hash_table_lookup(components, "type");
+			tmpchannel->display_name = g_hash_table_lookup(components, "display_name");
 
 			if(tmpchannel->team_id == NULL || purple_strequal(tmpchannel->team_id, team_id)) {
 				GList *tmplist;foundchannel = FALSE;
@@ -1610,15 +1626,17 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		if (chat == NULL) {
 			GHashTable *defaults = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
 
-			char *alias;
+			const gchar *alias;
 			g_hash_table_insert(defaults, "team_id", g_strdup(channel->team_id));
 			g_hash_table_insert(defaults, "id", g_strdup(channel->id));
 			g_hash_table_insert(defaults, "creator_id", g_strdup(channel->creator_id));
 			g_hash_table_insert(defaults, "type", g_strdup(channel->type));
+			g_hash_table_insert(defaults, "display_name", g_strdup(channel->display_name));
 
 			if (channel->type && *(channel->type) != MATTERMOST_CHANNEL_GROUP) {
 				g_hash_table_insert(defaults, "name", g_strconcat(channel->name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, channel->team_id), NULL));
-				alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+				//alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+				alias = mm_get_chat_alias(ma,channel);
 			} else {
 				g_hash_table_insert(defaults, "name", g_strdup(channel->name));
 				alias = g_strdup(channel->display_name);
@@ -1639,13 +1657,14 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			if (channel->creator_id) {
 				g_hash_table_replace(ma->group_chats_creators, g_strdup(channel->id), g_strdup(channel->creator_id));
 			}
-			g_free(alias);
+			//g_free(alias);
 		}
 
-		gchar *alias;
+		const gchar *alias;
 
 		if (channel->type && *(channel->type) != MATTERMOST_CHANNEL_GROUP) {
-			alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+			//alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
+			alias = mm_get_chat_alias(ma,channel);
 		} else {
 			alias = g_strdup(channel->display_name);
 		}
@@ -1883,15 +1902,24 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	const gchar *header = json_object_get_string_member(channel, "header");
 	const gchar *purpose = json_object_get_string_member(channel, "purpose");
 
-	gchar *alias;
+	const gchar *alias;
 	//gboolean autojoin = purple_account_get_bool(ma->account, "use-autojoin", FALSE);
 
 	if (creator_id && *creator_id) {
 		g_hash_table_replace(ma->group_chats_creators, g_strdup(id), g_strdup(creator_id));
 	}
 
+	MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
+	tmpchannel->id = g_strdup(id);
+	tmpchannel->display_name = g_strdup(display_name);
+	tmpchannel->type = g_strdup(type);
+	tmpchannel->creator_id = g_strdup(creator_id);
+	tmpchannel->name = g_strdup(name);
+	tmpchannel->team_id = g_strdup(team_id);
+
 	if (type && *(type) != MATTERMOST_CHANNEL_GROUP) {
-		alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+		//alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+		alias = mm_get_chat_alias(ma, tmpchannel);
 	} else {
 		alias = g_strdup(display_name);
 	}
@@ -1927,14 +1955,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 
 	} 
 
-		MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
-		tmpchannel->id = g_strdup(id);
-		tmpchannel->display_name = g_strdup(display_name);
-		tmpchannel->type = g_strdup(type);
-		tmpchannel->creator_id = g_strdup(creator_id);
-		tmpchannel->name = g_strdup(name);
-
-		tmpchannel->team_id = g_strdup(team_id);
+		
 
 		tmpchannel->channel_approximate_view_time = mm_find_channel_approximate_view_time(ma, tmpchannel->id);
 		purple_chat_set_alias(mm_purple_blist_find_chat(ma, id),alias);
@@ -1946,7 +1967,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 
 		mm_join_room(ma, tmpchannel);
 
-		g_free(alias);
+		//g_free(alias);
 }
 
 static void
@@ -3064,9 +3085,21 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 						if (chat) {
 							GHashTable *components = purple_chat_get_components(chat);
 							gchar *team_id = g_hash_table_lookup(components, "team_id");
-							gchar *alias;
-							if (team_id) {
-								alias = g_strconcat(g_hash_table_lookup(ma->group_chats,channel_id), MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+							gchar *channel_id = g_hash_table_lookup(components, "id");
+							gchar *type = g_hash_table_lookup(components, "type");
+							gchar *display_name = g_hash_table_lookup(components, "display_name");
+							const gchar *alias;
+
+							MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
+							tmpchannel->id = g_strdup(channel_id);
+							tmpchannel->team_id = g_strdup(team_id);
+							tmpchannel->display_name = g_strdup(display_name);
+							tmpchannel->type = g_strdup(type);
+							
+							if (tmpchannel->team_id) {
+								//alias = g_strconcat(g_hash_table_lookup(ma->group_chats,channel_id), MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
+								alias = mm_get_chat_alias(ma,tmpchannel);
+
 							} else {
 								alias = g_strdup(g_hash_table_lookup(ma->group_chats,channel_id));
 							}
@@ -3075,6 +3108,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 							purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel_id));
 							purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(team_id));
 							purple_conversation_set_data(PURPLE_CONVERSATION(conv), "name", g_strdup(alias));
+							purple_conversation_set_data(PURPLE_CONVERSATION(conv), "display_name", g_strdup(display_name));
 							purple_conversation_present(PURPLE_CONVERSATION(conv));
 						}
 				}
@@ -4424,6 +4458,7 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel->id));
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "team_id", g_strdup(team_id));
 					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "name", g_strdup(alias));
+					purple_conversation_set_data(PURPLE_CONVERSATION(conv), "display_name", g_strdup(channel->display_name));
 					purple_conversation_present(PURPLE_CONVERSATION(conv));
 
 					//HERE we already went through mm_get_users_of_room but since 
