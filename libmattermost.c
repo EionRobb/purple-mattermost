@@ -1412,6 +1412,19 @@ mm_get_chat_alias(MattermostAccount *ma, MattermostChannel *ch)
 	gchar *alias = NULL;
 	gchar *type = NULL;
 
+	//FIXME: redo with some pattern matching.. this is ugly.
+	if (ch->type && purple_strequal(ch->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
+		const gchar *tmpa = g_strjoinv("", g_strsplit(ch->display_name, ma->username, -1));
+		const gchar *tmpb = g_strjoinv(",", g_strsplit(tmpa,", ",-1));
+		const gchar *tmpc = g_strjoinv(",", g_strsplit(tmpb,",,",-1));
+		if (g_str_has_prefix(tmpc,",")) {
+			alias = g_strndup(tmpc+1,strlen(tmpc));
+		} else {
+			alias = g_strdup(tmpc);
+		}	
+		return alias;
+	}
+
 	type = g_strconcat((ch->type && purple_strequal(ch->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_PRIVATE))) ? MATTERMOST_CHANNEL_PRIVATE_VISUAL : "", NULL);
 
 	alias = g_strconcat(type, ch->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, ch->team_id), NULL);
@@ -1496,9 +1509,9 @@ static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	gchar *team_id = user_data;
-	gboolean first_team = FALSE;
+	//gboolean first_team = FALSE;
 
-	if (purple_strequal(mm_get_first_team_id(ma),team_id)) first_team = TRUE;
+	//if (purple_strequal(mm_get_first_team_id(ma),team_id)) first_team = TRUE;
 	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost channels"),TRUE)) return;
 
 	JsonArray *channels = json_node_get_array(node);
@@ -1536,13 +1549,9 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 		} else {
 			// group channels do not belong to any team, avoid duplicating.
-			if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_GROUP && !first_team) continue;
-
-			//TODO: strip our own username from group channel display_name
-			//if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_GROUP) {
-			//	printf ("NAME: %s\n",mm_channel->display_name);
-			//	}
-
+			//if (mm_channel->type && *(mm_channel->type) == MATTERMOST_CHANNEL_GROUP && !first_team) continue;
+			//OK : this is done for each team now, but we get group channels below other in initial sort list. no dups.
+	
 			mm_channel->name=g_strdup(name);
 			mm_channel->team_id = g_strdup(json_object_get_string_member(channel, "team_id")); // NULL for group channels
 			if (mm_channel_is_hidden(ma, mm_channel->id)) {
@@ -1633,13 +1642,12 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			g_hash_table_insert(defaults, "type", g_strdup(channel->type));
 			g_hash_table_insert(defaults, "display_name", g_strdup(channel->display_name));
 
+			alias = mm_get_chat_alias(ma,channel);
+
 			if (channel->type && *(channel->type) != MATTERMOST_CHANNEL_GROUP) {
 				g_hash_table_insert(defaults, "name", g_strconcat(channel->name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, channel->team_id), NULL));
-				//alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
-				alias = mm_get_chat_alias(ma,channel);
 			} else {
 				g_hash_table_insert(defaults, "name", g_strdup(channel->name));
-				alias = g_strdup(channel->display_name);
 			}
 
 			//g_hash_table_insert(defaults,"display_name",g_strdup(alias));
@@ -1661,13 +1669,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 		}
 
 		const gchar *alias;
-
-		if (channel->type && *(channel->type) != MATTERMOST_CHANNEL_GROUP) {
-			//alias = g_strconcat(channel->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, channel->team_id), NULL);
-			alias = mm_get_chat_alias(ma,channel);
-		} else {
-			alias = g_strdup(channel->display_name);
-		}
+		alias = mm_get_chat_alias(ma,channel);
 
 		g_hash_table_replace(ma->aliases,g_strdup(channel->id),g_strdup(alias));
 
@@ -1917,13 +1919,7 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 	tmpchannel->name = g_strdup(name);
 	tmpchannel->team_id = g_strdup(team_id);
 
-	if (type && *(type) != MATTERMOST_CHANNEL_GROUP) {
-		//alias = g_strconcat(display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
-		alias = mm_get_chat_alias(ma, tmpchannel);
-	} else {
-		alias = g_strdup(display_name);
-	}
- 
+	alias = mm_get_chat_alias(ma, tmpchannel);
 
 	if (mm_purple_blist_find_chat(ma, id) == NULL) {
 
@@ -3096,13 +3092,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 							tmpchannel->display_name = g_strdup(display_name);
 							tmpchannel->type = g_strdup(type);
 							
-							if (tmpchannel->team_id) {
-								//alias = g_strconcat(g_hash_table_lookup(ma->group_chats,channel_id), MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, team_id), NULL);
-								alias = mm_get_chat_alias(ma,tmpchannel);
-
-							} else {
-								alias = g_strdup(g_hash_table_lookup(ma->group_chats,channel_id));
-							}
+							alias = mm_get_chat_alias(ma,tmpchannel);
 
 							PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel_id), alias);
 							purple_conversation_set_data(PURPLE_CONVERSATION(conv), "id", g_strdup(channel_id));
