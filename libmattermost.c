@@ -347,6 +347,21 @@ purple_message_destroy(PurpleMessage *message)
 #define g_timeout_add          purple_timeout_add
 #define g_source_remove        purple_timeout_remove
 
+
+#define purple_image_store_add(img)  purple_imgstore_add_with_id( \
+        g_memdup(purple_imgstore_get_data(img), purple_imgstore_get_size(img)), \
+        purple_imgstore_get_size(img), purple_imgstore_get_filename(img))
+#define purple_image_store_get       purple_imgstore_find_by_id
+#define PurpleImage  PurpleStoredImage
+
+#define purple_image_new_from_file(p, e)  purple_imgstore_new_from_file(p)
+#define purple_image_new_from_data(d, l)  purple_imgstore_add(d, l, NULL)
+#define purple_image_get_path             purple_imgstore_get_filename
+#define purple_image_get_data_size        purple_imgstore_get_size
+#define purple_image_get_data             purple_imgstore_get_data
+#define purple_image_get_extension        purple_imgstore_get_extension
+
+
 #else
 // Purple3 helper functions
 #define purple_conversation_set_data(conv, key, value)  g_object_set_data(G_OBJECT(conv), key, value)
@@ -517,16 +532,16 @@ mm_g_free_mattermost_channel_link(gpointer a)
 }
 
 typedef struct {
-//	gchar *id;
+		gchar *id;
 //	gchar *user_id;
 //	gchar *post_id;
 	gchar *name;
 //	gchar *extension;
 //	gint64 size;
-//	gchar *mime_type;
+		gchar *mime_type;
 //	gint width;
 //	gint height;
-//	gboolean has_preview_image;
+	gboolean has_preview_image;
 	gchar *uri;
 	MattermostChannelLink *mmchlink;
 } MattermostFile;
@@ -535,13 +550,13 @@ void
 mm_g_free_mattermost_file(gpointer a)
 {
 	MattermostFile *f = a;
-//	g_free(f->id);
+	g_free(f->id);
 //	g_free(f->user_id);
 //	g_free(f->post_id);
 	g_free(f->name);
 //	g_free(f->extension);
-//	g_free(f->mime_type);
-//	g_free(f->uri);
+	g_free(f->mime_type);
+	g_free(f->uri);
 	mm_g_free_mattermost_channel_link(f->mmchlink);
 	g_free(f);
 }
@@ -2580,22 +2595,11 @@ mm_purple_flag_to_role(PurpleChatUserFlags flags)
 }
 
 static void
-mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+mm_purple_message_file_send(MattermostAccount *ma, MattermostFile *mmfile, const gchar *anchor, gboolean isimage)
 {
-
-	JsonObject *response = json_node_get_object(node);
-	MattermostFile *mmfile = user_data;
-	gchar *anchor;
-
-//todo: if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost file metadata"),TRUE)) return;
-	if (json_object_get_int_member(response, "status_code") >= 400) {
-		anchor = g_strdup(mmfile->uri);
-	} else {
-		mmfile->name = g_strdup(json_object_get_string_member(response, "name"));
-		anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL); 		
-	}
-
 	PurpleMessageFlags msg_flags = (purple_strequal(mmfile->mmchlink->sender, ma->self->username) ? PURPLE_MESSAGE_SEND | PURPLE_MESSAGE_REMOTE_SEND | PURPLE_MESSAGE_DELAYED : PURPLE_MESSAGE_RECV);
+	
+	if (isimage) msg_flags |= PURPLE_MESSAGE_IMAGES;
 	
 	if (g_hash_table_contains(ma->group_chats, mmfile->mmchlink->channel_id)) {
 		purple_serv_got_chat_in(ma->pc, g_str_hash(mmfile->mmchlink->channel_id), mmfile->mmchlink->sender, msg_flags, anchor, mmfile->mmchlink->timestamp);
@@ -2616,6 +2620,89 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 			purple_message_destroy(pmsg);
 		}
 	}
+}
+
+static void
+mm_process_message_image_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	MattermostFile *mmfile = user_data;
+	PurpleImage *image;
+	guint image_id;
+	gsize response_len;
+	gpointer response_dup;
+	const gchar *response_str;
+	gchar *anchor;
+
+	JsonObject *response = json_node_get_object(node);
+
+	response_str = g_dataset_get_data(node, "raw_body");
+	response_len = json_object_get_int_member(response,"len");
+	response_dup = g_memdup(response_str, response_len);
+
+	image = purple_image_new_from_data(response_dup,response_len);
+	image_id = purple_image_store_add(image);
+
+	if (purple_account_get_bool(ma->account,"show-full-images", FALSE)) {
+		anchor = g_strdup_printf("<img id='%d' src='%s' />", image_id, mmfile->uri);
+	} else {
+		anchor = g_strdup_printf("<a href='%s'>%s <img id='%d' src='%s' /></a>", mmfile->uri, _("[view full image]"), image_id, mmfile->uri);
+	}
+
+	mm_purple_message_file_send(ma, mmfile, anchor, TRUE);
+
+	g_free(anchor);
+	mm_g_free_mattermost_file(mmfile);
+}
+
+static void
+mm_process_message_image(MattermostAccount *ma, MattermostFile *mmfile)
+{
+	gchar *url;
+
+	if (mmfile->has_preview_image) {
+		url=mm_build_url(ma,"/files/%s/preview", mmfile->id);
+	} else if (purple_account_get_bool(ma->account,"show-full-images", FALSE)) {
+		url=mm_build_url(ma,"/files/%s" , mmfile->id);
+	} else {
+		url=mm_build_url(ma,"/files/%s/thumbnail" , mmfile->id);
+	}
+
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_process_message_image_response, mmfile);
+	g_free(url);
+}
+
+static void
+mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+
+	JsonObject *response = json_node_get_object(node);
+	MattermostFile *mmfile = user_data;
+	gchar *anchor = NULL;
+
+//todo: if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost file metadata"),TRUE)) return;
+	if (json_object_get_int_member(response, "status_code") >= 400) {
+		anchor = g_strdup(mmfile->uri);
+	} else {
+		mmfile->name = g_strdup(json_object_get_string_member(response, "name"));
+		mmfile->mime_type = g_strdup(json_object_get_string_member(response, "mime_type"));
+		mmfile->id = g_strdup(json_object_get_string_member(response, "id"));
+		if (purple_strequal(json_object_get_string_member(response, "has_preview_image"),"true")) {
+			mmfile->has_preview_image = TRUE;
+		} else {
+			mmfile->has_preview_image = FALSE;
+		}
+	}
+
+// do we really support any image type ? ...
+	if (g_str_has_prefix(mmfile->mime_type,"image/") && purple_account_get_bool(ma->account, "show-images", TRUE)) {
+		mm_process_message_image(ma,mmfile);
+		return;
+	}
+
+	//TODO: that file can have thumbnail, display it ? ...
+	if (!anchor) anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL);
+
+	mm_purple_message_file_send(ma, mmfile, anchor, FALSE);
 	
 	mm_g_free_mattermost_file(mmfile);
 	g_free(anchor);
@@ -5434,7 +5521,14 @@ mm_add_account_options(GList *account_options)
 	option = purple_account_option_bool_new(N_("Interpret (subset of) markdown"), "use-markdown", TRUE);
 	account_options = g_list_append(account_options, option);	
 
-  option = purple_account_option_bool_new(N_("Auto generate buddies aliases"), "use-alias", FALSE);
+	option = purple_account_option_bool_new(N_("Auto generate buddies aliases"), "use-alias", FALSE);
+	account_options = g_list_append(account_options, option);
+
+	option = purple_account_option_bool_new(N_("Show images in messages"), "show-images", TRUE);
+	account_options = g_list_append(account_options, option);
+
+	//FIXME: this one shall depend on above one !
+	option = purple_account_option_bool_new(N_("Show full images in messages"), "show-full-images", FALSE);
 	account_options = g_list_append(account_options, option);
 
 	return account_options;
@@ -5712,7 +5806,7 @@ plugin_init(PurplePlugin *plugin)
 		//prpl_info->add_buddy_with_invite = mm_add_buddy;
 	#endif
 
-	prpl_info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE;
+	prpl_info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE | OPT_PROTO_IM_IMAGE;
 	prpl_info->protocol_options = mm_add_account_options(prpl_info->protocol_options);
 	prpl_info->icon_spec.format = "png,gif,jpeg";
 	prpl_info->icon_spec.min_width = 0;
@@ -5815,7 +5909,7 @@ mm_protocol_init(PurpleProtocol *prpl_info)
 
 	info->id = MATTERMOST_PLUGIN_ID;
 	info->name = "Mattermost";
-	info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE;
+	info->options = OPT_PROTO_CHAT_TOPIC | OPT_PROTO_SLASH_COMMANDS_NATIVE | OPT_PROTO_IM_IMAGE;
 	info->account_options = mm_add_account_options(info->account_options);
 
 	split = purple_account_user_split_new(_("Server"), MATTERMOST_DEFAULT_SERVER, MATTERMOST_SERVER_SPLIT_CHAR);
