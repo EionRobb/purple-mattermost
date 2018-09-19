@@ -1370,6 +1370,24 @@ mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b)
         return 0;
 }
 
+int
+mm_compare_channels_by_type_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostChannel *p1 = a;
+	const MattermostChannel *p2 = b;
+
+	const gchar *p = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_PRIVATE);
+	const gchar *o = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_OPEN);
+	const gchar *g = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP);
+//const gchar *d = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT);
+
+	if (purple_strequal(p1->type, p2->type)) return 0;
+	if (purple_strequal(p1->type,g)) return -1;
+	if (purple_strequal(p2->type,g)) return 1;
+	if (purple_strequal(p1->type,p) && purple_strequal(p2->type,o)) return -1;
+	return 1;
+}
+
 const gchar *
 mm_get_alias(MattermostUser *mu)
 {
@@ -1581,6 +1599,8 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 
 	mm_channels = g_list_sort(mm_channels, mm_compare_channels_by_display_name_int);
+	mm_channels = g_list_sort(mm_channels, mm_compare_channels_by_type_int);
+
 	for (j = mm_channels; j != NULL; j=j->next) {
 		MattermostChannel *channel = j->data;
 		mm_set_group_chat(ma, channel->team_id, channel->name, channel->id);
