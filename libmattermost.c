@@ -3538,7 +3538,10 @@ mm_idle_updater_timeout(gpointer data)
 	}
 	
 	mm_set_idle(pc, idle_time);
-	
+
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	mm_refresh_statuses(ma,NULL);
+
 	return TRUE;
 }
 
