@@ -1005,7 +1005,7 @@ mm_update_cookies(MattermostAccount *ma, const GList *cookie_headers)
 	gchar *cookie_name;
 	gchar *cookie_value;
 	const GList *cur;
-	
+
 	for (cur = cookie_headers; cur != NULL; cur = g_list_next(cur))
 	{
 		cookie_start = cur->data;
@@ -1050,7 +1050,7 @@ PurpleHttpResponse *response, gpointer user_data)
 	gsize body_len;
 	const gchar *body = purple_http_response_get_data(response, &body_len);
 	const gchar *error_message = purple_http_response_get_error(response);
-	const GList *headers = purple_http_response_get_all_headers(response);
+	const GList *headers = purple_http_response_get_headers_by_name(response, "Set-Cookie");
 
 	MattermostProxyConnection *conn = user_data;
 	JsonParser *parser = json_parser_new();
