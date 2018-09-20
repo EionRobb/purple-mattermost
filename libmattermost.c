@@ -729,6 +729,44 @@ mm_user_info(MattermostUser *mu)
 }
 
 static void
+mm_about_server(PurpleProtocolAction *action)
+{
+	PurpleConnection *pc = purple_protocol_action_get_connection(action);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Server Version"), ma->client_config->server_version);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Site Name"), ma->client_config->site_name);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Site URL"), ma->client_config->site_url);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Support Email"), ma->client_config->support_email);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Report Problems"), ma->client_config->report_a_problem_link);
+
+	purple_notify_user_info_add_section_break(user_info);
+
+	if(ma->client_config->enable_commands) {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("Slash commands"),_("enabled"));
+	} else {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("Slash commands"),_("disabled"));
+	}
+	
+	if(ma->client_config->public_link) {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("Public file links"),_("enabled"));
+	} else {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("Public file links"),_("disabled"));
+	}
+
+	purple_notify_user_info_add_section_break(user_info);
+
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Build number"), ma->client_config->build_number);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Build hash"), ma->client_config->build_hash);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Build date"), ma->client_config->build_date);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Enterprise ready"), ma->client_config->enterprise_ready);
+
+	purple_notify_userinfo(ma->pc, _("Mattermost Server"), user_info, NULL, NULL);
+
+	purple_notify_user_info_destroy(user_info);
+}
+
+static void
 mm_about_myself(PurpleProtocolAction *action)
 {
 	PurpleConnection *pc = purple_protocol_action_get_connection(action);
@@ -1279,6 +1317,47 @@ mm_get_user_prefs(MattermostAccount *ma)
 }
 
 static void
+mm_get_client_config_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting Mattermost client configuration"),TRUE)) return;
+
+	JsonObject *response = json_node_get_object(node);
+
+	if (json_object_get_string_member(response,"EnablePublicLink"), "true") {
+		ma->client_config->public_link = TRUE; 
+	} else {
+		ma->client_config->public_link = FALSE;
+	}
+
+	if (json_object_get_string_member(response,"EnableCommands"), "true") {
+		ma->client_config->enable_commands = TRUE;
+	} else {
+		ma->client_config->enable_commands = FALSE;
+	}
+
+	ma->client_config->site_name = g_strdup(json_object_get_string_member(response,"SiteName"));
+	ma->client_config->support_email = g_strdup(json_object_get_string_member(response,"SupportEmail"));
+	ma->client_config->server_version = g_strdup(json_object_get_string_member(response,"Version"));
+	ma->client_config->site_url = g_strdup(json_object_get_string_member(response,"SiteURL"));
+	ma->client_config->report_a_problem_link = g_strdup(json_object_get_string_member(response,"ReportAProblemLink"));
+	ma->client_config->build_number = g_strdup(json_object_get_string_member(response,"BuildNumber"));
+	ma->client_config->build_hash = g_strdup(json_object_get_string_member(response,"BuildHash"));
+	ma->client_config->build_date = g_strdup(json_object_get_string_member(response,"BuildDate"));
+	ma->client_config->enterprise_ready = g_strdup(json_object_get_string_member(response,"BuildEnterpriseReady"));
+}
+
+static void
+mm_get_client_config(MattermostAccount *ma)
+{
+	gchar *url;
+	//NOTE: MM 5.3 still does not implement 'new' format.
+	url = mm_build_url(ma,"/config/client?format=old");
+
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_get_client_config_response, NULL);
+	g_free(url);
+}
+
+static void
 mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
@@ -1367,6 +1446,7 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 	//TODO: get avatar ?
 	mm_get_user_prefs(ma);
+	mm_get_client_config(ma);
 	mm_set_me(ma);
 	mm_get_teams(ma);
 }
@@ -1416,6 +1496,8 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 	mm_get_me(ma);
 }
+
+
 
 static PurpleChatUserFlags
 mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
@@ -1566,7 +1648,11 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 	}
 
 	//TODO: that file can have thumbnail, display it ? ...
-	if (!anchor) anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL);
+	if (!mmfile->uri || !ma->client_config->public_link) {
+		anchor = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name,"]",NULL);
+	} else {
+		if (!anchor) anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL);
+	}
 
 	mm_purple_message_file_send(ma, mmfile, anchor, FALSE);
 	
@@ -2573,6 +2659,10 @@ mm_login(PurpleAccount *account)
 		ma->last_load_last_message_timestamp = 0;
 	}
 
+	ma->client_config = g_new0(MattermostClientConfig,1);
+	ma->client_config->public_link = FALSE;
+	ma->client_config->enable_commands = FALSE;
+
 	ma->one_to_ones = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->one_to_ones_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->group_chats = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
@@ -2698,6 +2788,9 @@ mm_close(PurpleConnection *pc)
 		json_object_unref(ma->pending_writes->data);
 		ma->pending_writes = g_slist_delete_link(ma->pending_writes, ma->pending_writes);
 	}
+
+	mm_g_free_mattermost_user(ma->self);
+	mm_g_free_mattermost_client_config(ma->client_config);
 
 	g_hash_table_destroy(ma->cookie_table); ma->cookie_table = NULL;
 	g_free(ma->last_channel_id); ma->last_channel_id = NULL;
@@ -4513,6 +4606,12 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 		return PURPLE_CMD_RET_FAILED;
 	}
 	
+	if (!ma->client_config->enable_commands) {
+		purple_notify_error(pc, _("Error"), _("Custom Slash Commands are disabled on Mattermost server"), 
+														_("(See: https://docs.mattermost.com/administration/config-settings.html#integrations)"), purple_request_cpar_from_connection(pc));
+		return PURPLE_CMD_RET_FAILED;
+	}
+
 	channel_id = purple_conversation_get_data(conv, "id");
 	if (channel_id == NULL) {
 		if (PURPLE_IS_IM_CONVERSATION(conv)) {
@@ -4578,6 +4677,9 @@ PurpleConnection *pc
 	m = g_list_append(m, act);
 
 	act = purple_protocol_action_new(_("About Myself"), mm_about_myself);
+	m = g_list_append(m, act);
+
+	act = purple_protocol_action_new(_("Server Info"), mm_about_server);
 	m = g_list_append(m, act);
 
 	return m;
