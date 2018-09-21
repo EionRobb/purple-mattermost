@@ -114,6 +114,20 @@ typedef struct {
 } MattermostUser;
 
 typedef struct {
+	gboolean public_link;
+	gboolean enable_commands;
+	gchar *site_name;
+	gchar *site_url;
+	gchar *support_email;
+	gchar *server_version;
+	gchar *report_a_problem_link;
+	gchar *build_number;
+	gchar *build_hash;
+	gchar *build_date;
+	gchar *enterprise_ready;
+} MattermostClientConfig;
+
+typedef struct {
 	PurpleAccount *account;
 	PurpleConnection *pc;
 	
@@ -122,6 +136,7 @@ typedef struct {
 	gchar *channel;
 	
 	MattermostUser *self;
+	MattermostClientConfig *client_config;
 
 	gchar *current_channel_id;
 	gchar *last_channel_id;

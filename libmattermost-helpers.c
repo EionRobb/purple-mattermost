@@ -129,6 +129,22 @@ void mm_g_free_mattermost_attachment_field(gpointer f)
 	g_free(af);
 }
 
+void
+mm_g_free_mattermost_client_config(gpointer a)
+{
+	MattermostClientConfig *cc = a;
+	if (!cc) return;
+	g_free(cc->site_name);
+	g_free(cc->support_email);
+	g_free(cc->site_url);
+	g_free(cc->server_version);
+	g_free(cc->build_number);
+	g_free(cc->build_hash);
+	g_free(cc->build_date);
+	g_free(cc->enterprise_ready);
+	g_free(cc->report_a_problem_link);
+	g_free(cc);
+}
 
 int
 mm_compare_users_by_id_int(gconstpointer a, gconstpointer b)
