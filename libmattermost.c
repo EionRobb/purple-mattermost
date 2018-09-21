@@ -767,6 +767,29 @@ mm_about_server(PurpleProtocolAction *action)
 }
 
 static void
+mm_about_commands(PurpleProtocolAction *action)
+{
+	PurpleConnection *pc = purple_protocol_action_get_connection(action);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+	PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
+	GList *i = NULL;
+	MattermostCommand *cmd = NULL;
+	for(i=ma->commands;i;i=i->next) {
+		cmd = i->data;
+		const gchar *info = g_strconcat("/",cmd->trigger," ",
+				strlen(cmd->auto_complete_hint) ? g_strconcat(cmd->auto_complete_hint," | ",NULL) : " | ",
+				strlen(cmd->auto_complete_desc) ? g_strconcat(cmd->auto_complete_desc," ",NULL) : "",
+				( !strlen(cmd->auto_complete_desc) && strlen(cmd->description) ) ? g_strconcat(cmd->description," ",NULL) : " ",
+				strlen(cmd->team_id) ? g_strconcat("[team only: ",g_hash_table_lookup(ma->teams, cmd->team_id),"]",NULL) : "",
+				NULL);
+
+		purple_notify_user_info_add_pair_plaintext(user_info,cmd->trigger, info);
+	} 
+	purple_notify_userinfo(ma->pc, _("Mattermost Slash Commands"), user_info, NULL, NULL);
+	purple_notify_user_info_destroy(user_info);
+}
+
+static void
 mm_about_myself(PurpleProtocolAction *action)
 {
 	PurpleConnection *pc = purple_protocol_action_get_connection(action);
@@ -821,7 +844,8 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 
 		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(name));
 		g_hash_table_replace(ma->teams_display_names, g_strdup(team_id), g_strdup(display_name));
-		
+
+		mm_get_commands_for_team(ma, team_id);		
 		mm_get_open_channels_for_team(ma, team_id);
 	}
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
@@ -1314,6 +1338,65 @@ mm_get_user_prefs(MattermostAccount *ma)
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_get_user_prefs_response, NULL);
 	g_free(url);
 
+}
+
+
+static void
+mm_get_commands_for_team_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+	JsonArray *response = json_node_get_array(node);
+	guint i, len = json_array_get_length(response);
+
+	for (i = 0; i < len; i++) {
+		JsonObject *command = json_array_get_object_element(response, i);
+		//printf("command is:%s\n",json_object_to_string(command));
+		MattermostCommand *cmd = g_new0(MattermostCommand,1);
+		cmd->trigger = g_strdup(json_object_get_string_member(command,"trigger"));
+		cmd->team_id = g_strdup(json_object_get_string_member(command,"team_id"));
+		cmd->display_name = g_strdup(json_object_get_string_member(command,"display_name"));
+		cmd->description = g_strdup(json_object_get_string_member(command,"description"));
+		cmd->auto_complete_hint = g_strdup(json_object_get_string_member(command,"auto_complete_hint"));
+		cmd->auto_complete_desc = g_strdup(json_object_get_string_member(command,"auto_complete_desc"));
+
+		if (!g_list_find_custom(ma->commands,cmd,mm_compare_cmd_int)) {
+			// we implement these commands ourselves.
+			if (!purple_strequal(cmd->trigger,"help") && 
+					!purple_strequal(cmd->trigger,"leave") &&
+					!purple_strequal(cmd->trigger,"online") &&
+					!purple_strequal(cmd->trigger,"away") &&
+					!purple_strequal(cmd->trigger,"dnd") &&
+					!purple_strequal(cmd->trigger,"offline") &&
+					!purple_strequal(cmd->trigger,"logout")) {
+				ma->commands=g_list_prepend(ma->commands,cmd);
+				const gchar *info = g_strconcat(cmd->trigger," ",
+				strlen(cmd->auto_complete_hint) ? g_strconcat(cmd->auto_complete_hint," | ",NULL) : " | ",
+				strlen(cmd->auto_complete_desc) ? g_strconcat(cmd->auto_complete_desc," ",NULL) : "",
+				( !strlen(cmd->auto_complete_desc) && strlen(cmd->description) ) ? g_strconcat(cmd->description," ",NULL) : " ",
+				strlen(cmd->team_id) ? g_strconcat("[team only: ",g_hash_table_lookup(ma->teams, cmd->team_id),"]",NULL) : "",
+				NULL);
+			
+				purple_cmd_register(cmd->trigger, "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_slash_command, info, NULL);
+			} else {
+				mm_g_free_mattermost_command(cmd);
+			}
+		} else {
+			mm_g_free_mattermost_command(cmd);
+		}
+	}
+	ma->commands = g_list_sort(ma->commands,mm_compare_cmd_2_int);
+}
+
+void
+mm_get_commands_for_team(MattermostAccount *ma,const gchar *team_id)
+{
+	gchar *url;
+
+	url = mm_build_url(ma,"/commands?team_id=%s",team_id);
+
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_get_commands_for_team_response, g_strdup(team_id));
+	g_free(url);
 }
 
 static void
@@ -4495,17 +4578,11 @@ mm_add_account_options(GList *account_options)
 {
 	PurpleAccountOption *option;
 
-	// option = purple_account_option_bool_new(N_("Auto-add buddies to the buddy list"), "auto-add-buddy", FALSE);
-	// account_options = g_list_append(account_options, option);
-	
 	option = purple_account_option_bool_new(N_("Use SSL/HTTPS"), "use-ssl", TRUE);
 	account_options = g_list_append(account_options, option);
 
 	option = purple_account_option_bool_new(N_("Password is Gitlab cookie"), "use-mmauthtoken", FALSE);
 	account_options = g_list_append(account_options, option);
-
-	//option = purple_account_option_bool_new(N_("Auto-Join new chats"), "use-autojoin", FALSE);
-	//account_options = g_list_append(account_options, option);
 
 	option = purple_account_option_bool_new(N_("Interpret (subset of) markdown"), "use-markdown", TRUE);
 	account_options = g_list_append(account_options, option);	
@@ -4540,62 +4617,24 @@ mm_cmd_leave(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 	return PURPLE_CMD_RET_OK;
 }
 
-static PurpleCmdRet
-mm_cmd_topic(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data)
+static void
+mm_slash_command_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
-	PurpleConnection *pc = NULL;
-	int id = -1;
-	PurpleChatConversation *chatconv = NULL;
-
-	pc = purple_conversation_get_connection(conv);
-	chatconv = PURPLE_CHAT_CONVERSATION(conv);
-	id = purple_chat_conversation_get_id(chatconv);
-
-	if (pc == NULL || id == -1)
-		return PURPLE_CMD_RET_FAILED;
-
-	if (!args || !args[0]) {
-		gchar *buf;
-		const gchar *topic = purple_chat_conversation_get_topic(chatconv);
-
-		if (topic) {
-			gchar *tmp, *tmp2;
-			tmp = g_markup_escape_text(topic, -1);
-			tmp2 = purple_markup_linkify(tmp);
-			buf = g_strdup_printf(_("current topic is: %s"), tmp2);
-			g_free(tmp);
-			g_free(tmp2);
-		} else {
-			buf = g_strdup(_("No topic is set"));
-		}
-		
-		purple_conversation_write_system_message(conv, buf, PURPLE_MESSAGE_NO_LOG);
-		
-		g_free(buf);
-		return PURPLE_CMD_RET_OK;
-	}
-
-	if (purple_strequal(cmd,"purpose")) {
-		mm_chat_set_header_purpose(pc, id, args ? args[0] : NULL, FALSE);
-	} else {
-		mm_chat_set_header_purpose(pc, id, args ? args[0] : NULL, TRUE);
-	}
-
-	return PURPLE_CMD_RET_OK;
+	gchar *cmd = user_data;
+	mm_check_mattermost_response(ma,node,_("Error"),g_strconcat(_("Error executing Mattermost Slash Command (/"),cmd,")",NULL),TRUE);
 }
 
 
-static PurpleCmdRet
+PurpleCmdRet
 mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer userdata)
 {
 	PurpleConnection *pc = NULL;
 	MattermostAccount *ma = NULL;
 	const gchar *channel_id = NULL;
-	const gchar *team_id = NULL;
 	JsonObject *data;
 	gchar *postdata;
 	gchar *url;
-	gchar *params_str, *original_msg;
+	gchar *params_str, *command;
 	
 	pc = purple_conversation_get_connection(conv);
 	if (pc == NULL) {
@@ -4606,12 +4645,6 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 		return PURPLE_CMD_RET_FAILED;
 	}
 	
-	if (!ma->client_config->enable_commands) {
-		purple_notify_error(pc, _("Error"), _("Custom Slash Commands are disabled on Mattermost server"), 
-														_("(See: https://docs.mattermost.com/administration/config-settings.html#integrations)"), purple_request_cpar_from_connection(pc));
-		return PURPLE_CMD_RET_FAILED;
-	}
-
 	channel_id = purple_conversation_get_data(conv, "id");
 	if (channel_id == NULL) {
 		if (PURPLE_IS_IM_CONVERSATION(conv)) {
@@ -4627,29 +4660,31 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	if (channel_id == NULL) {
 		return PURPLE_CMD_RET_FAILED;
 	}
-	
-	team_id = g_hash_table_lookup(ma->channel_teams, channel_id);
-	if (team_id == NULL) {
+
+	if (PURPLE_IS_IM_CONVERSATION(conv)) {
+		purple_notify_error(pc, _("Error"), _("Not implemented."), 
+														_("Slash commands not implemented (yet) for private channels."), purple_request_cpar_from_connection(pc));
 		return PURPLE_CMD_RET_FAILED;
 	}
-	
-	params_str = g_strjoinv(" ", args);
 
-	if (purple_strequal(cmd,"cmd")) {
-		original_msg = g_strconcat("/", params_str, NULL);
-	} else {
-		original_msg = g_strconcat("/", cmd, " ", params_str, NULL);
+	if (!ma->client_config->enable_commands) {
+		purple_notify_error(pc, _("Error"), _("Custom Slash Commands are disabled on Mattermost server"), 
+														_("(See: https://docs.mattermost.com/administration/config-settings.html#integrations)"), purple_request_cpar_from_connection(pc));
+		return PURPLE_CMD_RET_FAILED;
 	}
+
+	params_str = g_strjoinv(" ", args);
+	command = g_strconcat("/", cmd, " ", params_str ? params_str : "", NULL);
 
 	g_free(params_str);
 
 	data = json_object_new();
-	json_object_set_string_member(data, "command", original_msg);
+	json_object_set_string_member(data, "command", command);
 	json_object_set_string_member(data, "channel_id", channel_id);
 	postdata = json_object_to_string(data);
 
 	url = mm_build_url(ma,"/commands/execute");
-	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, NULL, NULL);
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_slash_command_response, g_strdup(cmd));
 	g_free(url);
 
 	g_free(postdata);
@@ -4681,6 +4716,9 @@ PurpleConnection *pc
 
 	act = purple_protocol_action_new(_("Server Info"), mm_about_server);
 	m = g_list_append(m, act);
+	
+	act = purple_protocol_action_new(_("Slash Commands"), mm_about_commands);
+	m = g_list_append(m, act);
 
 	return m;
 }
@@ -4691,67 +4729,14 @@ plugin_load(PurplePlugin *plugin, GError **error)
 
 	mm_purple_xhtml_im_html_init();
 
-	purple_cmd_register("invite_people", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("invite_people <username>:  Invite user to join channel"), NULL);
-
-	purple_cmd_register("join", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("join <name>:  Join a channel"), NULL);
-
+	// we do not want the server to initiate channel leave, we do it ourselves.
 	purple_cmd_register("leave", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
 						_("leave:  Leave the channel"), NULL);
 
-	purple_cmd_register("part", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
-						_("part:  Leave the channel"), NULL);
-
-	purple_cmd_register("me", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("me <action>:  Display action text"), NULL);
-
-	purple_cmd_register("msg", "ws", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("msg <username> <message>:  Direct message someone"), NULL);
-
-	purple_cmd_register("topic", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
-						_("topic <description>:  Set the channel topic description"), NULL);
-
-	purple_cmd_register("header", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
-						_("header <description>:  Set the channel header description"), NULL);
-
-	purple_cmd_register("purpose", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_cmd_topic,
-						_("purpose <description>:  Set the channel purpose description"), NULL);
-
-	purple_cmd_register("echo", "sw", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("echo message <delay>:  Post a message as yourself, optionally adding a delay"), NULL);
-
-	purple_cmd_register("shrug", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("shrug message:  Post a message as yourelf followed by 'shrug'"), NULL);
-
-	purple_cmd_register("cmd", "s", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
-						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
-						MATTERMOST_PLUGIN_ID, mm_slash_command,
-						_("cmd <command>:  Pass slash command to Mattermost server / BOT"), NULL);
-
 	return TRUE;
+
 }
 
 static gboolean
