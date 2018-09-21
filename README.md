@@ -1,12 +1,3 @@
-## V4 API note:
-
-V4 API implementation is Work In Progress:
-in particular following does not work and/or is buggy:
-
-- chat history is limited to (first) 200 messages 
-- ...
-
-
 # Pidgin-Mattermost plugin by Eion Robb 
 
 Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium, bitlbee) with Mattermost server. 
@@ -32,7 +23,7 @@ Not implemented yet:
 
 **Core Communication**
  
-- Send and receive messages, including weblinks and emoji.  
+- Send and receive messages, including weblinks, emoji and images.
 - Display of online/offline/away status. 
 - Sending of read notifications so the server understands users is still online. 
 - Display of messages sent while Pidgin was offline. 

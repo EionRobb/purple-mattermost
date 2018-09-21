@@ -16,31 +16,6 @@
  *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Glib
-#include <glib.h>
-#include "glibcompat.h"
-#include "image-store.h"
-#include "image.h"
-
-static gboolean
-g_str_insensitive_equal(gconstpointer v1, gconstpointer v2)
-{
-	return (g_ascii_strcasecmp(v1, v2) == 0);
-}
-static guint
-g_str_insensitive_hash(gconstpointer v)
-{
-	guint hash;
-	gchar *lower_str = g_ascii_strdown(v, -1);
-	
-	hash = g_str_hash(lower_str);
-	g_free(lower_str);
-	
-	return hash;
-}
-
-
-// GNU C libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,908 +24,19 @@ g_str_insensitive_hash(gconstpointer v)
 #endif
 #include <errno.h>
 
+#include <glib.h>
 #include <json-glib/json-glib.h>
-// Supress overzealous json-glib 'critical errors'
-#define json_object_has_member(JSON_OBJECT, MEMBER) \
-	(JSON_OBJECT ? json_object_has_member(JSON_OBJECT, MEMBER) : FALSE)
-#define json_object_get_int_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_int_member(JSON_OBJECT, MEMBER) : 0)
-#define json_object_get_string_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_string_member(JSON_OBJECT, MEMBER) : NULL)
-#define json_object_get_array_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_array_member(JSON_OBJECT, MEMBER) : NULL)
-#define json_object_get_object_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_object_member(JSON_OBJECT, MEMBER) : NULL)
-#define json_object_get_boolean_member(JSON_OBJECT, MEMBER) \
-	(json_object_has_member(JSON_OBJECT, MEMBER) ? json_object_get_boolean_member(JSON_OBJECT, MEMBER) : FALSE)
-
-#define json_array_get_length(JSON_ARRAY) \
-	(JSON_ARRAY ? json_array_get_length(JSON_ARRAY) : 0)
-
-static gchar *
-json_object_to_string(JsonObject *obj)
-{
-	JsonNode *node;
-	gchar *str;
-	JsonGenerator *generator;
-	
-	node = json_node_new(JSON_NODE_OBJECT);
-	json_node_set_object(node, obj);
-	
-	// a json string ...
-	generator = json_generator_new();
-	json_generator_set_root(generator, node);
-	str = json_generator_to_data(generator, NULL);
-	g_object_unref(generator);
-	json_node_free(node);
-	
-	return str;
-}
-
-static gchar *
-json_array_to_string(JsonArray *array)
-{
-	JsonNode *node;
-	gchar *str;
-	JsonGenerator *generator;
-
-	node = json_node_new(JSON_NODE_ARRAY);
-	json_node_set_array(node, array);
-
-	// a json string ...
-	generator = json_generator_new();
-	json_generator_set_root(generator, node);
-	str = json_generator_to_data(generator, NULL);
-	g_object_unref(generator);
-	json_node_free(node);
-	
-	return str;
-}
-
-static JsonArray *
-json_array_from_string(const gchar *str)
-{
-	JsonParser *parser = json_parser_new();
-	if (json_parser_load_from_data(parser, str, -1, NULL)) {
-		return json_node_get_array(json_parser_get_root(parser));
-	}
-	return NULL;
-}
+#include "glibcompat.h"
 
 #include <purple.h>
-#include <http.h>
 
-#ifndef PURPLE_PLUGINS
-#	define PURPLE_PLUGINS
-#endif
-
-#ifndef _
-#	define _(a) (a)
-#	define N_(a) (a)
-#endif
-
-#define MATTERMOST_PLUGIN_ID "prpl-eionrobb-mattermost"
-#ifndef MATTERMOST_PLUGIN_VERSION
-#define MATTERMOST_PLUGIN_VERSION "1.1"
-#endif
-#define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/mattermost-libpurple"
-
-#define MATTERMOST_USERAGENT "libpurple"
-#define MATTERMOST_API_EP "/api/v4"
-
-#define MATTERMOST_BUFFER_DEFAULT_SIZE 40960
-#define MATTERMOST_USER_PAGE_SIZE 200 // 200 is MAX. in paged queries (and default)
-#define MATTERMOST_HISTORY_PAGE_SIZE 60 // 200 is MAX in paged queries (60 is default)
-#define MATTERMOST_MAX_PAGES 10 // that is 2000 users or posts in paged queries
-
-#define MATTERMOST_DEFAULT_SERVER ""
-#define MATTERMOST_SERVER_SPLIT_CHAR '|'
-
-#define MATTERMOST_CHANNEL_SEPARATOR_VISUAL " / "
-#define MATTERMOST_CHANNEL_PRIVATE_VISUAL  "[P] "
-#define MATTERMOST_CHANNEL_SEPARATOR "---"
-#define MATTERMOST_CHANNEL_OPEN 'O'
-#define MATTERMOST_CHANNEL_PRIVATE 'P'
-#define MATTERMOST_CHANNEL_DIRECT 'D'
-#define MATTERMOST_CHANNEL_GROUP 'G'
-#define MATTERMOST_CHANNEL_TYPE_STRING(t) (gchar[2]) { t, '\0' }
-
-#define MATTERMOST_MENTION_ME_MATCH(m) (g_strconcat("(?<MNTWRD>", m, ")(?<MNTSEP>([[:^alnum:]\r\n]|$))", NULL)) 
-#define MATTERMOST_MENTION_ME_REPLACE "<u><b>\\g<MNTWRD></b></u>\\g<MNTSEP>"
-#define MATTERMOST_MENTION_ALL_MATCH "(?<MNTWRD>(@|#)[a-z0-9]+)(?<MNTSEP>([[:^alnum:]\r\n]|$))"
-#define MATTERMOST_MENTION_ALL_REPLACE "<u>\\g<MNTWRD></u>\\g<MNTSEP>" //MM does not use underline
-
-// need some string which is unlikely in channel header/purpose
-#define MATTERMOST_CHAT_TOPIC_SEP "\n----- ---- --- -- -\n"
-
-#define MATTERMOST_DEFAULT_BLIST_GROUP_NAME  _("Mattermost")
-
-#define MATTERMOST_BOT_LABEL " [BOT]"
-
-#define MATTERMOST_HTTP_GET    0
-#define MATTERMOST_HTTP_PUT    1
-#define MATTERMOST_HTTP_POST   2
-#define MATTERMOST_HTTP_DELETE 3
-
-// Purple2 compat functions
-#if !PURPLE_VERSION_CHECK(3, 0, 0)
-
-#define purple_connection_error                 purple_connection_error_reason
-#define purple_connection_get_protocol          purple_connection_get_prpl
-#define PURPLE_CONNECTION_CONNECTING       PURPLE_CONNECTING
-#define PURPLE_CONNECTION_CONNECTED        PURPLE_CONNECTED
-#define PURPLE_CONNECTION_FLAG_HTML        PURPLE_CONNECTION_HTML
-#define PURPLE_CONNECTION_FLAG_NO_BGCOLOR  PURPLE_CONNECTION_NO_BGCOLOR
-#define PURPLE_CONNECTION_FLAG_NO_FONTSIZE PURPLE_CONNECTION_NO_FONTSIZE
-#define PURPLE_CONNECTION_FLAG_NO_IMAGES   PURPLE_CONNECTION_NO_IMAGES
-#define purple_connection_set_flags(pc, f)      ((pc)->flags = (f))
-#define purple_connection_get_flags(pc)         ((pc)->flags)
-#define purple_blist_find_group        purple_find_group
-#define purple_protocol_get_id  purple_plugin_get_id
-#define PurpleProtocolChatEntry  struct proto_chat_entry
-#define PurpleChatConversation             PurpleConvChat
-#define PurpleIMConversation               PurpleConvIm
-#define purple_conversations_find_chat_with_account(id, account) \
-		PURPLE_CONV_CHAT(purple_find_conversation_with_account(PURPLE_CONV_TYPE_CHAT, id, account))
-#define purple_chat_conversation_has_left     purple_conv_chat_has_left
-#define PurpleConversationUpdateType          PurpleConvUpdateType
-#define PURPLE_CONVERSATION_UPDATE_UNSEEN     PURPLE_CONV_UPDATE_UNSEEN
-#define PURPLE_IS_IM_CONVERSATION(conv)       (purple_conversation_get_type(conv) == PURPLE_CONV_TYPE_IM)
-#define PURPLE_IS_CHAT_CONVERSATION(conv)     (purple_conversation_get_type(conv) == PURPLE_CONV_TYPE_CHAT)
-#define PURPLE_CONVERSATION(chatorim)         (chatorim == NULL ? NULL : chatorim->conv)
-#define PURPLE_IM_CONVERSATION(conv)          PURPLE_CONV_IM(conv)
-#define PURPLE_CHAT_CONVERSATION(conv)        PURPLE_CONV_CHAT(conv)
-#define purple_conversation_present_error     purple_conv_present_error
-#define purple_serv_got_joined_chat(pc, id, name)  PURPLE_CONV_CHAT(serv_got_joined_chat(pc, id, name))
-#define purple_conversations_find_chat(pc, id)  PURPLE_CONV_CHAT(purple_find_chat(pc, id))
-#define purple_serv_got_chat_in                    serv_got_chat_in
-#define purple_serv_got_chat_left                  serv_got_chat_left
-#define purple_chat_conversation_add_user     purple_conv_chat_add_user
-#define purple_chat_conversation_add_users    purple_conv_chat_add_users
-#define purple_chat_conversation_get_users    purple_conv_chat_get_users
-#define purple_chat_conversation_remove_user  purple_conv_chat_remove_user
-#define purple_chat_conversation_has_user     purple_conv_chat_find_user
-#define purple_chat_conversation_get_topic    purple_conv_chat_get_topic
-#define purple_chat_conversation_set_topic    purple_conv_chat_set_topic
-#define purple_chat_conversation_leave        purple_conv_chat_left
-#define PurpleChatUserFlags  PurpleConvChatBuddyFlags
-#define PURPLE_CHAT_USER_NONE     PURPLE_CBFLAGS_NONE
-#define PURPLE_CHAT_USER_OP       PURPLE_CBFLAGS_OP
-#define PURPLE_CHAT_USER_FOUNDER  PURPLE_CBFLAGS_FOUNDER
-#define PURPLE_CHAT_USER_TYPING   PURPLE_CBFLAGS_TYPING
-#define PURPLE_CHAT_USER_AWAY     PURPLE_CBFLAGS_AWAY
-#define PURPLE_CHAT_USER_HALFOP   PURPLE_CBFLAGS_HALFOP
-#define PURPLE_CHAT_USER_VOICE    PURPLE_CBFLAGS_VOICE
-#define PURPLE_CHAT_USER_TYPING   PURPLE_CBFLAGS_TYPING
-#define PurpleChatUser  PurpleConvChatBuddy
-static inline PurpleChatUser *
-purple_chat_conversation_find_user(PurpleChatConversation *chat, const char *name)
-{
-	PurpleChatUser *cb = purple_conv_chat_cb_find(chat, name);
-
-	if (cb != NULL) {
-		g_dataset_set_data(cb, "chat", chat);
-	}
-
-	return cb;
-}
-#define purple_chat_user_get_flags(cb)     purple_conv_chat_user_get_flags(g_dataset_get_data((cb), "chat"), (cb)->name)
-#define purple_chat_user_set_flags(cb, f)  purple_conv_chat_user_set_flags(g_dataset_get_data((cb), "chat"), (cb)->name, (f))
-#define purple_chat_user_set_alias(cb, a)  (g_free((cb)->alias), (cb)->alias = g_strdup(a))
-#define PurpleIMTypingState	PurpleTypingState
-#define PURPLE_IM_NOT_TYPING	PURPLE_NOT_TYPING
-#define PURPLE_IM_TYPING	PURPLE_TYPING
-#define PURPLE_IM_TYPED		PURPLE_TYPED
-#define purple_conversation_get_connection      purple_conversation_get_gc
-#define purple_conversation_write_system_message(conv, message, flags)  purple_conversation_write((conv), NULL, (message), ((flags) | PURPLE_MESSAGE_SYSTEM), time(NULL))
-#define purple_chat_conversation_get_id         purple_conv_chat_get_id
-#define PURPLE_CMD_FLAG_PROTOCOL_ONLY  PURPLE_CMD_FLAG_PRPL_ONLY
-#define PURPLE_IS_BUDDY                PURPLE_BLIST_NODE_IS_BUDDY
-#define PURPLE_IS_CHAT                 PURPLE_BLIST_NODE_IS_CHAT
-#define purple_chat_get_name_only      purple_chat_get_name
-static inline void
-purple_chat_set_alias(PurpleChat *chat, const char *alias)
-{
-	PurpleBlistUiOps *ops = purple_blist_get_ui_ops();
-	char *new_alias = purple_utf8_strip_unprintables(alias);
-	char *old_alias = chat->alias;
-
-	if (purple_strequal(old_alias, new_alias)) {
-		g_free(new_alias);
-		return;
-	}
-	
-	if ((new_alias != NULL) && (*new_alias != '\0')) {
-		chat->alias = new_alias;
-	} else {
-		chat->alias = NULL;
-		g_free(new_alias); /* could be "\0" */
-	}
-	
-	if (ops) {
-		if (ops->save_node)
-			ops->save_node((PurpleBlistNode*) chat);
-		if (ops->update)
-			ops->update(purple_get_blist(), (PurpleBlistNode *)chat);
-	}
-
-	purple_signal_emit(purple_blist_get_handle(), "blist-node-aliased", chat, old_alias);
-	g_free(old_alias);
-}
-
-#define purple_blist_find_buddy        purple_find_buddy
-#define purple_serv_got_alias                      serv_got_alias
-#define purple_buddy_set_server_alias  purple_blist_server_alias_buddy
-#define purple_buddy_set_local_alias		purple_blist_alias_buddy
-#define purple_account_set_private_alias    purple_account_set_alias
-#define purple_account_get_private_alias    purple_account_get_alias
-#define purple_protocol_got_user_status		purple_prpl_got_user_status
-#define purple_serv_got_im                         serv_got_im
-#define purple_serv_got_typing                     serv_got_typing
-#define purple_conversations_find_im_with_account(name, account)  \
-		PURPLE_CONV_IM(purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM, name, account))
-#define purple_im_conversation_new(account, from) PURPLE_CONV_IM(purple_conversation_new(PURPLE_CONV_TYPE_IM, account, from))
-#define PurpleMessage  PurpleConvMessage
-#define purple_message_set_time(msg, time)  ((msg)->when = (time))
-#define purple_conversation_write_message(conv, msg)  purple_conversation_write(conv, msg->who, msg->what, msg->flags, msg->when)
-static inline PurpleMessage *
-purple_message_new_outgoing(const gchar *who, const gchar *contents, PurpleMessageFlags flags)
-{
-	PurpleMessage *message = g_new0(PurpleMessage, 1);
-	
-	message->who = g_strdup(who);
-	message->what = g_strdup(contents);
-	message->flags = flags;
-	message->when = time(NULL);
-	
-	return message;
-}
-static inline void
-purple_message_destroy(PurpleMessage *message)
-{
-	g_free(message->who);
-	g_free(message->what);
-	g_free(message);
-}
-
-#define purple_message_get_recipient(message)  (message->who)
-#define purple_message_get_contents(message)   (message->what)
-
-#undef purple_notify_error
-#define purple_notify_error(handle, title, primary, secondary, cpar)   \
-	purple_notify_message((handle), PURPLE_NOTIFY_MSG_ERROR, (title), \
-						(primary), (secondary), NULL, NULL)
-#undef purple_notify_warning
-#define purple_notify_warning(handle, title, primary, secondary, cpar)   \
-	purple_notify_message((handle), PURPLE_NOTIFY_MSG_WARNING, (title), \
-						(primary), (secondary), NULL, NULL)
-#define purple_notify_user_info_add_pair_html  purple_notify_user_info_add_pair
-
-#define purple_request_cpar_from_connection(a)  purple_connection_get_account(a), NULL, NULL
-
-#define PurpleProtocolAction                           PurplePluginAction
-#define purple_protocol_action_get_connection(action)  ((PurpleConnection *) (action)->context)
-#define purple_protocol_action_new                     purple_plugin_action_new
-#define purple_protocol_get_id                         purple_plugin_get_id
-
-#define purple_account_privacy_deny_add     purple_privacy_deny_add
-#define purple_account_privacy_deny_remove  purple_privacy_deny_remove
-//define PurpleHttpConnection  PurpleUtilFetchUrlData
-#define purple_buddy_set_name  purple_blist_rename_buddy
-#if	!PURPLE_VERSION_CHECK(2, 12, 0)
-#	define PURPLE_MESSAGE_REMOTE_SEND  0x10000
-#endif
-
-#define g_timeout_add_seconds  purple_timeout_add_seconds
-#define g_timeout_add          purple_timeout_add
-#define g_source_remove        purple_timeout_remove
-
-#else
-// Purple3 helper functions
-#define purple_conversation_set_data(conv, key, value)  g_object_set_data(G_OBJECT(conv), key, value)
-#define purple_conversation_get_data(conv, key)         g_object_get_data(G_OBJECT(conv), key)
-#define purple_message_destroy          g_object_unref
-#define purple_chat_user_set_alias(cb, alias)  g_object_set((cb), "alias", (alias), NULL)
-#define purple_chat_get_alias(chat)  g_object_get_data(G_OBJECT(chat), "alias")
-#define purple_protocol_action_get_connection(action)  ((action)->connection)
-
-//TODO remove this when dx adds this to the PurpleMessageFlags enum
-#define PURPLE_MESSAGE_REMOTE_SEND  0x10000
-#endif
-
-typedef struct {
-	gchar *user_id;
-	gchar *room_id;
-	gchar *username;
-	gchar *nickname;
-	gchar *first_name;
-	gchar *last_name;
-	gchar *email;	
-	gchar *alias;
-	gchar *position;
-	gchar *locale;
-	PurpleChatUserFlags roles;
-	gint64 channel_approximate_view_time;
-} MattermostUser;
-
-void
-mm_g_free_mattermost_user(gpointer a)
-{
-	MattermostUser *u = a;
-	if (!u) return;
-	g_free(u->user_id);
-	g_free(u->room_id);
-	g_free(u->username);
-	g_free(u->nickname);
-	g_free(u->first_name);
-	g_free(u->last_name);
-	g_free(u->email);
-	g_free(u->alias);
-	g_free(u->position);
-	g_free(u->locale);
-	g_free(u);
-}
-
-typedef struct {
-	PurpleAccount *account;
-	PurpleConnection *pc;
-	
-	GHashTable *cookie_table;
-	gchar *session_token;
-	gchar *channel;
-	
-	MattermostUser *self;
-
-	gchar *current_channel_id;
-	gchar *last_channel_id;
-	guint read_messages_timeout;
-	gint64 last_message_timestamp;
-	gint64 last_load_last_message_timestamp;
-	guint idle_timeout;
-	
-	gchar *username;
-	gchar *server;
-	gchar *api_endpoint;
-	
-	PurpleSslConnection *websocket;
-	guint websocket_inpa;
-	gint websocket_fd;
-	
-	gboolean websocket_header_received;
-	gboolean sync_complete;
-	guchar packet_code;
-	gchar *frame;
-	guint64 frame_len;
-	guint64 frame_len_progress;
-	
-	gint seq; //incrementing counter
-	gint roomlist_team_count;
-	
-	GHashTable *one_to_ones;      // A store of known room_id's -> username's
-	GHashTable *one_to_ones_rev;  // A store of known usernames's -> room_id's
-	GHashTable *group_chats;      // A store of known multi-user room_id's -> room name's
-	GHashTable *aliases;          // A store of known display names -> room id's
-	GHashTable *group_chats_rev;  // A store of known multi-user room name's -> room_id's
-	GHashTable *group_chats_creators; // chat_id -> creator_id
-	GHashTable *sent_message_ids; // A store of message id's that we generated from this instance
-	GHashTable *result_callbacks; // Result ID -> Callback function
-	GHashTable *usernames_to_ids; // username -> user id
-	GHashTable *ids_to_usernames; // user id -> username
-	GHashTable *teams;            // A list of known team_id's -> team names
-	GHashTable *teams_display_names; // an descriptive names too.
-	GHashTable *channel_teams;    // A list of channel_id -> team_id to know what team a channel is in
-	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
-	
-	GList *user_prefs;            // all user preferences read from server
-	GList *joined_channels;       // all channels for which we performed mm_join_room and have not left;
-	GList *mention_words;         // terms set up in MM account settings which trigger notifications.
-	GSList *http_conns; /**< PurpleHttpConnection to be cancelled on logout */
-	gint frames_since_reconnect;
-	GSList *pending_writes;
-
-	GRegex *mention_me_regex;
-	GRegex *mention_all_regex;
-
-} MattermostAccount;
-
-typedef void (*MattermostProxyCallbackFunc)(MattermostAccount *ma, JsonNode *node, gpointer user_data);
-
-typedef struct {
-	MattermostAccount *ma;
-	MattermostProxyCallbackFunc callback;
-	gpointer user_data;
-} MattermostProxyConnection;
-
-typedef struct {
-	gchar *id;
-	gchar *team_id;
-	gchar *name;
-	gchar *type;
-	gchar *display_name;
-	gchar *header;
-	gchar *purpose;	
-	gchar *creator_id;
-	gint64 channel_approximate_view_time;
-	gint page_users; //FIXME: this is for getting paged replies from server, should be NOT here.
-	gint page_history; //FIXME: this is for getting paged replies from server, should be NOT here.
-} MattermostChannel;
-
-void
-mm_g_free_mattermost_channel(gpointer a)
-{
-	MattermostChannel *c = a;
-	if (!c) return;
-	g_free(c->id);
-	g_free(c->team_id);
-	g_free(c->name);
-	g_free(c->display_name);
-	g_free(c->type);
-	g_free(c->header);
-	g_free(c->purpose);
-	g_free(c->creator_id);
-}
-
-typedef struct {
-	gchar *user_id;
-	gchar *category;
-	gchar *name;
-	gchar *value;
-} MattermostUserPref;
-
-typedef struct {
-	gchar *channel_id;
-	gchar *file_id;
-	gchar *sender;
-	gint64 timestamp;
-} MattermostChannelLink;
-
-void
-mm_g_free_mattermost_channel_link(gpointer a)
-{
-	MattermostChannelLink *l = a;
-	g_free(l->channel_id);
-	g_free(l->file_id);
-	g_free(l->sender);
-	g_free(l);
-}
-
-typedef struct {
-		gchar *id;
-//	gchar *user_id;
-//	gchar *post_id;
-	gchar *name;
-//	gchar *extension;
-//	gint64 size;
-		gchar *mime_type;
-//	gint width;
-//	gint height;
-	gboolean has_preview_image;
-	gchar *uri;
-	MattermostChannelLink *mmchlink;
-} MattermostFile;
-
-void
-mm_g_free_mattermost_file(gpointer a)
-{
-	MattermostFile *f = a;
-	g_free(f->id);
-//	g_free(f->user_id);
-//	g_free(f->post_id);
-	g_free(f->name);
-//	g_free(f->extension);
-	g_free(f->mime_type);
-	g_free(f->uri);
-	mm_g_free_mattermost_channel_link(f->mmchlink);
-	g_free(f);
-}
-
-//#include <mkdio.h>
-extern char markdown_version[];
-int mkd_line(char *, int, char **, int);
-
-#define MKD_NOLINKS	0x00000001	/* don't do link processing, block <a> tags  */
-#define MKD_NOIMAGE	0x00000002	/* don't do image processing, block <img> */
-#define MKD_NOPANTS	0x00000004	/* don't run smartypants() */
-#define MKD_NOHTML	0x00000008	/* don't allow raw html through AT ALL */
-#define MKD_STRICT	0x00000010	/* disable SUPERSCRIPT, RELAXED_EMPHASIS */
-#define MKD_TAGTEXT	0x00000020	/* process text inside an html tag; no
-					 * <em>, no <bold>, no html or [] expansion */
-#define MKD_NO_EXT	0x00000040	/* don't allow pseudo-protocols */
-#define MKD_NOEXT	MKD_NO_EXT	/* ^^^ (aliased for user convenience) */
-#define MKD_CDATA	0x00000080	/* generate code for xml ![CDATA[...]] */
-#define MKD_NOSUPERSCRIPT 0x00000100	/* no A^B */
-#define MKD_NORELAXED	0x00000200	/* emphasis happens /everywhere/ */
-#define MKD_NOTABLES	0x00000400	/* disallow tables */
-#define MKD_NOSTRIKETHROUGH 0x00000800	/* forbid ~~strikethrough~~ */
-#define MKD_TOC		0x00001000	/* do table-of-contents processing */
-#define MKD_1_COMPAT	0x00002000	/* compatibility with MarkdownTest_1.0 */
-#define MKD_AUTOLINK	0x00004000	/* make http://foo.com link even without <>s */
-#define MKD_SAFELINK	0x00008000	/* paranoid check for link protocol */
-#define MKD_NOHEADER	0x00010000	/* don't process header blocks */
-#define MKD_TABSTOP	0x00020000	/* expand tabs to 4 spaces */
-#define MKD_NODIVQUOTE	0x00040000	/* forbid >%class% blocks */
-#define MKD_NOALPHALIST	0x00080000	/* forbid alphabetic lists */
-#define MKD_NODLIST	0x00100000	/* forbid definition lists */
-#define MKD_EXTRA_FOOTNOTE 0x00200000	/* enable markdown extra-style footnotes */
-#define MKD_NOSTYLE	0x00400000	/* don't extract <style> blocks */
-#define MKD_NODLDISCOUNT 0x00800000	/* disable discount-style definition lists */
-#define	MKD_DLEXTRA	0x01000000	/* enable extra-style definition lists */
-#define MKD_FENCEDCODE	0x02000000	/* enabled fenced code blocks */
-#define MKD_IDANCHOR	0x04000000	/* use id= anchors for TOC links */
-#define MKD_GITHUBTAGS	0x08000000	/* allow dash and underscore in element names */
-#define MKD_URLENCODEDANCHOR 0x10000000 /* urlencode non-identifier chars instead of replacing with dots */
-#define MKD_LATEX	0x40000000	/* handle embedded LaTeX escapes */
-
-#define MKD_EMBED	MKD_NOLINKS|MKD_NOIMAGE|MKD_TAGTEXT
-
-
-
-typedef struct {
-	GRegex *regex;
-	gchar *find;
-	gchar *repl;
-} MattermostRegexElement;
-
-#define MM_MAX_REV_REGEX 7
-
-static MattermostRegexElement mm_rev_regexes[MM_MAX_REV_REGEX]={
-	// (inline) code block, bold, italic, strikethrough -> pass
-	// no underline in html5, font size 1,2 - ignored.
-	// line break 
-	{
-	.find = "<br>",
-	.repl = "\n",
-	.regex = NULL,
-	},
-	// title1 
-	{
-	.find = "<font size=\"7\">(.*)</font>",
-	.repl = " # \\1",
-	.regex = NULL,
-	},
-	// title2 
-	{
-	.find = "<font size=\"6\">(.*)</font>",
-	.repl = " ## \\1",
-	.regex = NULL,
-	},
-	// title3
-	{
-	.find = "<font size=\"5\">(.*)</font>",
-	.repl = " ### \\1",
-	.regex = NULL,
-	},
-	// title4 
-	{
-	.find = "<font size=\"4\">(.*)</font>",
-	.repl = " #### \\1",
-	.regex = NULL,
-	},
-	// horizontal line
-	{
-	.find = "<hr>",
-	.repl = "\n---\n",
-	.regex = NULL,
-	},
-	// blockquote
-	{
-	.find = "^ *&gt;(.*)$",
-	.repl = ">\\1",
-	.regex = NULL,
-	},
-};
-
-#define MM_MAX_REGEX 9
-
-static MattermostRegexElement mm_regexes[MM_MAX_REGEX]={
-	// line break 
-	{
-	.find = "<br>",
-	.repl = "\n",
-	.regex = NULL,
-	},
-	// (inline) code block 
-	{
-	.find = "<code>(.*)</code>",
-	.repl = "<font back=\"#E1E1E1\">\\1</font>",
-	.regex = NULL,
-	},
-	// title1
-	{
-	.find = "^ *# +(.*)($|<br>)",
-	.repl = "<font size=\"7\"><b>\\1</b></font>",
-	.regex = NULL,
-	},
-	// title2
-	{
-	.find = "^ *## +(.*)$",
-	.repl = "<font size=\"6\"><b>\\1</b></font>",
-	.regex = NULL,
-	},
-	// title3
-	{
-	.find = "^ *### +(.*)$",
-	.repl = "<font size=\"5\"><b>\\1</b></font>",
-	.regex = NULL,
-	},
-	// title4-6 (normal font size is 3)
-	{
-	.find = "^ *#####?#? +(.*)$",
-	.repl = "<font size=\"4\"<b>\\1</b></font>",
-	.regex = NULL,
-	},
-	// horizontal line
-	{	
-	.find = "^ *(-|_|\\*){3,}$",
-	.repl = "<hr>",
-	.regex = NULL,
-	},
-	// blockquote
-	{
-	.find = "^ *(&gt;|>)(.*)$",
-	.repl = "<font size=\"6\"><b>\"</b></font>\\2", //0x93 ?
-	.regex = NULL,
-	},
-	// strikethrough
-	{
-	.find = "<del>(.*)</del>",
-	.repl = "<s>\\1</s>",
-	.regex = NULL,
-	},
-};
-
-static void 
-mm_purple_xhtml_im_html_init(void)
-{
-	gint i;
-
-	for (i=0;i< MM_MAX_REGEX; i++) {
-		mm_regexes[i].regex = g_regex_new(mm_regexes[i].find, G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE|G_REGEX_MULTILINE|G_REGEX_UNGREEDY, G_REGEX_MATCH_NOTEMPTY, NULL);
-	}
-	for (i=0;i< MM_MAX_REV_REGEX; i++) {
-		mm_rev_regexes[i].regex = g_regex_new(mm_rev_regexes[i].find, G_REGEX_CASELESS|G_REGEX_DOTALL|G_REGEX_OPTIMIZE|G_REGEX_MULTILINE|G_REGEX_UNGREEDY, G_REGEX_MATCH_NOTEMPTY, NULL);
-	}
-
-}
-
-static gchar *
-mm_purple_html_to_xhtml_im_parse(MattermostAccount *ma, const gchar *html)
-{
-	gint i;
-	gchar *input = NULL;
-	gchar *output = NULL;
-
-	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
-		return g_strdup(html);
-	}
- 
-	if (html == NULL) {
-		return NULL;
-	}
-
-	input = g_strdup(html);
-	for (i=0;i< MM_MAX_REGEX; i++) {
-		output = g_regex_replace(mm_regexes[i].regex, input, -1, 0, mm_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
-		g_free(input);
-		input = g_strdup(output);
-		g_free(output);
-	}
-	
-	return g_strdup(input);
-}
-
-static gchar *
-mm_purple_xhtml_im_to_html_parse(MattermostAccount *ma, const gchar *xhtml_im)
-{
-	gint i;
-	gchar *input = NULL;
-	gchar *output = NULL;
-
-	if(!purple_account_get_bool(ma->account, "use-markdown", TRUE)) {
-		return g_strdup(xhtml_im);
-	}
-
-	if (xhtml_im == NULL) {
-		return NULL;
-	}
-
-	input = g_strdup(xhtml_im);
-	for (i=0;i< MM_MAX_REV_REGEX; i++) {
-		output = g_regex_replace(mm_rev_regexes[i].regex, input, -1, 0, mm_rev_regexes[i].repl, G_REGEX_MATCH_NOTEMPTY, NULL);
-		g_free(input);
-		input = g_strdup(output);
-		g_free(output);
-	}
-
-	return g_strdup(input);
-}
-
-static gchar *
-mm_markdown_to_html(MattermostAccount *ma, const gchar *markdown)
-{
-	static char *markdown_str = NULL;
-	int markdown_len;
-	int flags = MKD_NOPANTS | MKD_NODIVQUOTE | MKD_NODLIST;
-	static gboolean markdown_version_checked = FALSE;
-	static gboolean markdown_version_safe = TRUE;
-	
-	if (markdown == NULL) {
-		return NULL;
-	}
-	
-	if (!markdown_version_checked) {
-		gchar **markdown_version_split = g_strsplit_set(markdown_version, ". ", -1);
-		gint major, minor, micro;
-
-		major = atoi(markdown_version_split[0]);
-		if (major > 2) {
-			markdown_version_checked = TRUE;
-		} else if (major == 2) {
-			minor = atoi(markdown_version_split[1]);
-			if (minor > 2) {
-				markdown_version_checked = TRUE;
-			} else if (minor == 2) {
-				micro = atoi(markdown_version_split[2]);
-				if (micro > 2) {
-					markdown_version_checked = TRUE;
-				}
-			}
-		}
-		
-		if (!markdown_version_checked) {
-			guint i;
-			for(i = 0; markdown_version_split[i]; i++) {
-				if (purple_strequal(markdown_version_split[i], "DEBUG")) {
-					markdown_version_safe = FALSE;
-					break;
-				}
-			}
-			markdown_version_checked = TRUE;
-		}
-		
-		g_strfreev(markdown_version_split);
-	}
-	
-	if (markdown_str != NULL) {
-		// if libmarkdown is pre-2.2.2 and we're using amalloc, don't free()
-		if (markdown_version_safe) {
-			free(markdown_str);
-		}
-	}
-	
-	markdown_len = mkd_line((char *)markdown, strlen(markdown), &markdown_str, flags);
-
-	if (markdown_len < 0) {
-		return NULL;
-	}
-
-	return mm_purple_html_to_xhtml_im_parse(ma, g_strndup(markdown_str, markdown_len));
-}
-
-
-
-static void
-mm_markup_anchor_parse_text(GMarkupParseContext *context, const gchar *text, gsize text_len, gpointer user_data, GError **error)
-{
-	GString *output = user_data;
-	
-	g_string_prepend_len(output, text, text_len);
-}
-
-static GMarkupParser mm_markup_anchor_parser = {
-	NULL,
-	NULL,
-	mm_markup_anchor_parse_text,
-	NULL,
-	NULL
-};
-
-static void
-mm_markdown_parse_start_element(GMarkupParseContext *context, const gchar *element_name, const gchar **attribute_names, const gchar **attribute_values, gpointer user_data, GError **error)
-{
-	GString *output = user_data;
-	
-	switch(g_str_hash(element_name)) {
-		case 0x2b607: case 0x2b5e7: //B
-			g_string_append(output, "**");
-			break;
-		case 0x2b60e: case 0x2b5ee: //I
-		case 0x5977b7: case 0x597377: //EM
-			g_string_append_c(output, '_');
-			break;
-		case 0x597759: case 0x597319: //BR
-			g_string_append_c(output, '\n');
-			break;
-		case 0xb8869ba: case 0xb87dd5a: //DEL
-		case 0x2b618: case 0x2b5f8: //S
-		case 0x1c93af97: case 0xcf9972d7: //STRIKE
-			g_string_append(output, "~~");
-			break;
-		case 0x2b606: case 0x2b5e6: //A
-		{
-			const gchar **name_cursor = attribute_names;
-			const gchar **value_cursor = attribute_values;
-			GString *href_string = g_string_new("](");
-			
-			while (*name_cursor) {
-				if (g_ascii_strncasecmp(*name_cursor, "href", -1) == 0) {
-					g_string_append(href_string, *value_cursor);
-					break;
-				}
-				name_cursor++;
-				value_cursor++;
-			}
-		
-			g_string_append_c(output, '[');
-			g_markup_parse_context_push(context, &mm_markup_anchor_parser, href_string);
-			break;
-		}
-	}
-	
-}
-
-static void
-mm_markdown_parse_end_element(GMarkupParseContext *context, const gchar *element_name, gpointer user_data, GError **error)
-{
-	GString *output = user_data;
-	
-	switch(g_str_hash(element_name)) {
-		case 0x2b607: case 0x2b5e7: //B
-			g_string_append(output, "**");
-			break;
-		case 0x2b60e: case 0x2b5ee: //I
-		case 0x5977b7: case 0x597377: //EM
-			g_string_append_c(output, '_');
-			break;
-		case 0xb8869ba: case 0xb87dd5a: //DEL
-		case 0x2b618: case 0x2b5f8: //S
-		case 0x1c93af97: case 0xcf9972d7: //STRIKE
-			g_string_append(output, "~~");
-			break;
-		case 0x2b606: case 0x2b5e6: //A
-		{
-			GString *href_string = g_markup_parse_context_pop(context);
-			g_string_append_printf(output, "%s)", href_string->str);
-			g_string_free(href_string, TRUE);
-			break;
-		}
-	}
-	
-}
-
-static void
-mm_markdown_parse_text(GMarkupParseContext *context, const gchar *text, gsize text_len, gpointer user_data, GError **error)
-{
-	GString *output = user_data;
-	
-	g_string_append_len(output, text, text_len);
-}
-
-static GMarkupParser mm_markup_markdown_parser = {
-	mm_markdown_parse_start_element,
-	mm_markdown_parse_end_element,
-	mm_markdown_parse_text,
-	NULL,
-	NULL
-};
-
-static gchar *
-mm_html_to_markdown(const gchar *html)
-{
-	GString *output = g_string_new(NULL);
-	GMarkupParseContext *context;
-	
-	context = g_markup_parse_context_new(&mm_markup_markdown_parser, G_MARKUP_TREAT_CDATA_AS_TEXT, output, NULL);
-	g_markup_parse_context_parse(context, "<html>", -1, NULL);	
-	g_markup_parse_context_parse(context, html, -1, NULL);	
-	g_markup_parse_context_parse(context, "</html>", -1, NULL);	
-	g_markup_parse_context_end_parse(context, NULL);
-	g_markup_parse_context_free(context);
-	
-	return g_string_free(output, FALSE);
-}
-
-
+#include "purplecompat.h"
+#include "image-store.h"
+#include "image.h"
+#include "libmattermost-json.h"
+#include "libmattermost-markdown.h"
+#include "libmattermost-helpers.h"
+#include "libmattermost.h"
 
 static gint
 mm_get_next_seq(MattermostAccount *ma)
@@ -971,30 +57,6 @@ mm_get_next_seq_callback(MattermostAccount *ma, MattermostProxyCallbackFunc call
 	g_hash_table_insert(ma->result_callbacks, GINT_TO_POINTER(seq), proxy);
 	
 	return seq;
-}
-
-gchar *
-mm_string_get_chunk(const gchar *haystack, gsize len, const gchar *start, const gchar *end)
-{
-	const gchar *chunk_start, *chunk_end;
-	g_return_val_if_fail(haystack && start && end, NULL);
-	
-	if (len > 0) {
-		chunk_start = g_strstr_len(haystack, len, start);
-	} else {
-		chunk_start = strstr(haystack, start);
-	}
-	g_return_val_if_fail(chunk_start, NULL);
-	chunk_start += strlen(start);
-	
-	if (len > 0) {
-		chunk_end = g_strstr_len(chunk_start, len - (chunk_start - haystack), end);
-	} else {
-		chunk_end = strstr(chunk_start, end);
-	}
-	g_return_val_if_fail(chunk_end, NULL);
-	
-	return g_strndup(chunk_start, chunk_end - chunk_start);
 }
 
 static void
@@ -1313,7 +375,6 @@ static void mm_get_user_prefs(MattermostAccount *ma);
 
 PurpleGroup* mm_get_or_create_default_group();
 static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
-static void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
@@ -1325,69 +386,7 @@ static PurpleChatUserFlags mm_role_to_purple_flag(MattermostAccount *ma, const g
 
 static void mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *id);
 static void mm_mark_room_messages_read_timeout_response(MattermostAccount *ma, JsonNode *node, gpointer user_data);
-int
-mm_compare_users_by_id_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostUser *p1 = a;
-	const MattermostUser *p2 = b;
-	if (!g_strcmp0(p1->user_id,p2->user_id)) return 0;
 
-	return -1;
-}
-
-int 
-mm_compare_channels_by_id_team_id_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostChannel *p1 = a;
-	const MattermostChannel *p2 = b;
-
-	if (!g_strcmp0(p1->id,p2->id) && !g_strcmp0(p1->team_id,p2->team_id)) return 0;
-
-	return -1;
-}
-
-int 
-mm_compare_channels_by_id_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostChannel *p1 = a;
-	const MattermostChannel *p2 = b;
-
-	if (!g_strcmp0(p1->id,p2->id)) return 0;
-
-	return -1;
-}
-
-int
-mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b)
-{
-        const MattermostChannel *p1 = a;
-        const MattermostChannel *p2 = b;
-
-        gint res = g_strcmp0(p1->display_name,p2->display_name);
-
-        if (res < 0) { return 1;}
-        if (res > 0) { return -1;}
-
-        return 0;
-}
-
-int
-mm_compare_channels_by_type_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostChannel *p1 = a;
-	const MattermostChannel *p2 = b;
-
-	const gchar *p = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_PRIVATE);
-	const gchar *o = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_OPEN);
-	const gchar *g = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP);
-//const gchar *d = MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_DIRECT);
-
-	if (purple_strequal(p1->type, p2->type)) return 0;
-	if (purple_strequal(p1->type,g)) return -1;
-	if (purple_strequal(p2->type,g)) return 1;
-	if (purple_strequal(p1->type,p) && purple_strequal(p2->type,o)) return -1;
-	return 1;
-}
 
 const gchar *
 mm_get_alias(MattermostUser *mu)
@@ -1665,7 +664,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			if (channel->creator_id) {
 				g_hash_table_replace(ma->group_chats_creators, g_strdup(channel->id), g_strdup(channel->creator_id));
 			}
-			//g_free(alias);
 		}
 
 		const gchar *alias;
@@ -1684,7 +682,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			purple_conversation_present(PURPLE_CONVERSATION(conv));
 		}
 		// already called from mm_join_chat
-		if (!purple_blist_node_get_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin")) mm_get_channel_by_id(ma, channel->team_id, channel->id); //mm_join_room(ma, channel);
+		if (!purple_blist_node_get_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin")) mm_get_channel_by_id(ma, channel->team_id, channel->id);
 	}
 
 	mm_get_users_by_ids(ma,mm_users);
@@ -1789,9 +787,8 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		mm_get_open_channels_for_team(ma, team_id);
 	}
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
-	// we need team_id for this.
+
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
-	// Update our idleness every 4.5 minutes
 	ma->idle_timeout = g_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
 
@@ -1805,8 +802,6 @@ mm_set_user_blist(MattermostAccount *ma, MattermostUser *mu, PurpleBuddy *buddy)
 	purple_blist_node_set_string(bnode, "first_name", mu->first_name);
 	purple_blist_node_set_string(bnode, "last_name", mu->last_name);
 
-	// id,  (and username ?) do not change
-	
 	// room_id exists only if a direct channel has been created.
 	if (mu->room_id && *mu->room_id) { 
 		purple_blist_node_set_string(bnode, "room_id", mu->room_id);
@@ -1873,7 +868,7 @@ mm_get_info(PurpleConnection *pc,const gchar *username)
 		gchar *info = g_strconcat(purple_account_get_bool(ma->account, "use-ssl", TRUE) ? "see https://" : "http://", ma->server, "/ -> team -> integrations", NULL); //We do not know which team is the BOT on.
 		purple_notify_user_info_add_pair_plaintext(user_info,_("Information"), info);
 		purple_notify_user_info_add_section_break(user_info);
-		purple_notify_user_info_add_pair_plaintext(user_info, NULL, "Mattermost webhook integration");
+		purple_notify_user_info_add_pair_plaintext(user_info, NULL, _("Mattermost webhook integration"));
 		purple_notify_userinfo(ma->pc, username, user_info, NULL, NULL);
 		purple_notify_user_info_destroy(user_info);
 		g_free(info);
@@ -1951,20 +946,17 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 
 	} 
 
-		
+	tmpchannel->channel_approximate_view_time = mm_find_channel_approximate_view_time(ma, tmpchannel->id);
+	purple_chat_set_alias(mm_purple_blist_find_chat(ma, id),alias);
 
-		tmpchannel->channel_approximate_view_time = mm_find_channel_approximate_view_time(ma, tmpchannel->id);
-		purple_chat_set_alias(mm_purple_blist_find_chat(ma, id),alias);
+	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(tmpchannel->id));
+	if (chatconv != NULL) {
+		purple_chat_conversation_set_topic(chatconv, NULL, mm_make_topic(header, purpose, purple_chat_conversation_get_topic(chatconv)));
+	}
 
-		PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(tmpchannel->id));
-		if (chatconv != NULL) {
-			purple_chat_conversation_set_topic(chatconv, NULL, mm_make_topic(header, purpose, purple_chat_conversation_get_topic(chatconv)));
-		}
-
-		mm_join_room(ma, tmpchannel);
-
-		//g_free(alias);
+	mm_join_room(ma, tmpchannel);
 }
+
 
 static void
 mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *id)
@@ -1989,27 +981,9 @@ mm_get_channel_by_id(MattermostAccount *ma, const gchar *team_id, const gchar *i
 	g_free(url);
 }
 
-#define _MM_BLIST_SET(b,u,p,s) \
-{ \
-	if (s) { \
-		purple_blist_node_set_string(PURPLE_BLIST_NODE(b), p, s); \
-	} else { \
-		const gchar *v = json_object_get_string_member(u,p); \
-		if (v && *v) { \
-			purple_blist_node_set_string(PURPLE_BLIST_NODE(b), p, v); \
-		} \
-	} \
-}
 
 static void mm_refresh_statuses(MattermostAccount *ma, const gchar *id);
 
-int mm_compare_users_by_alias_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostUser *u1 = a;
-	const MattermostUser *u2 = b;
-
-	return g_strcmp0(u1->alias, u2->alias);
-}
 
 
 static MattermostUser *mm_user_from_json(MattermostAccount *ma, JsonObject *user);
@@ -2090,6 +1064,8 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 	g_list_free_full(user_data, mm_g_free_mattermost_user);
 }
 
+
+
 static void
 mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 {
@@ -2116,18 +1092,6 @@ mm_get_users_by_ids(MattermostAccount *ma, GList *ids)
 	json_array_unref(data);
 	g_free(postdata);
 	g_free(url);
-}
-
-#define _MM_TOOLTIP_LINE_ADD(b,u,d,p,o) \
-{ \
-	if (o) { \
-		purple_notify_user_info_add_pair_plaintext(u,d,o); \
-	} else { \
-		const gchar *v = purple_blist_node_get_string(PURPLE_BLIST_NODE(b),p); \
-		if (v && *v) { \
-			purple_notify_user_info_add_pair_plaintext(u,d,v); \
-		} \
-	} \
 }
 
 static void 
@@ -2172,7 +1136,6 @@ mm_remove_group_chat(MattermostAccount *ma, const gchar *channel_id)
 static void 
 mm_set_me(MattermostAccount *ma)
 {
-
 	if (!purple_account_get_private_alias(ma->account)) {
 		purple_account_set_private_alias(ma->account, ma->self->username); 
 	}
@@ -2195,7 +1158,6 @@ mm_get_teams(MattermostAccount *ma)
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_got_teams, NULL);
 
 	g_free(url);
-
 }
 
 static void 
@@ -2230,22 +1192,8 @@ mm_save_user_pref(MattermostAccount *ma, MattermostUserPref *pref)
 	json_array_unref(data);
 }
 
-int
-mm_compare_prefs_int(gconstpointer a, gconstpointer b)
-{
-	const MattermostUserPref *p1 = a;
-	const MattermostUserPref *p2 = b;
 
-	if (!(g_strcmp0(p1->user_id,p2->user_id) &&
-		g_strcmp0(p1->category,p2->category) &&
-		g_strcmp0(p1->name,p2->name))) {
-		return 0;
-	} 
-	return -1;
-}
-
-static void mm_chat_leave(PurpleConnection *pc, int id);
-
+//static void mm_chat_leave(PurpleConnection *pc, int id);
 /*
 static void
 mm_remove_blist_by_id(MattermostAccount *ma, const gchar *id)
@@ -2337,7 +1285,7 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gboolean gitlabauth = FALSE;
 
 	if (node == NULL) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Invalid or expired Gitlab cookie");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("Invalid or expired Gitlab cookie"));
 		return;
 	}
 
@@ -2355,7 +1303,7 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	ma->self = g_new0(MattermostUser, 1);
 
 	if (!json_object_get_string_member(response, "id") || !json_object_get_string_member(response, "username")) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("User ID/Name not received from server"));
 		return;
 	}
 	
@@ -2439,7 +1387,7 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonObject *response;
 
 	if (node == NULL) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "Bad username/password");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("Bad username/password"));
 		return;
 	}
 	
@@ -2462,7 +1410,7 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
 	if (!json_object_get_string_member(response, "id") || !json_object_get_string_member(response, "username")) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "User ID/Name not received from server");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("User ID/Name not received from server"));
 		return;
 	}
 
@@ -2802,8 +1750,7 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 
 			if ((channel_type != NULL && *channel_type != MATTERMOST_CHANNEL_DIRECT) || g_hash_table_contains(ma->group_chats, channel_id)) {
 				PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(channel_id));
-				// PurpleChatUser *cb;
-			
+
 				if (chatconv) {	
 					if (purple_strequal(msg_type, "system_header_change") || purple_strequal(msg_type, "system_purpose_change")) {
 						const gchar *new_header = json_object_get_string_member(props, "new_header");
@@ -2814,12 +1761,9 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				
 					// Group chat message
 					gchar *msg_out = g_strconcat( message ? message : " " , attachments ? attachments : NULL, NULL);
-
-					// purple_serv_got_chat_in does not set chat window alias ...
-
 					gchar *alias = g_hash_table_lookup(ma->aliases,channel_id);
-					if (alias && chatconv) {
 
+					if (alias && chatconv) {
 						purple_conversation_set_name(PURPLE_CONVERSATION(chatconv),alias);
 					}
 
@@ -2923,34 +1867,11 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 }
 
 
-typedef struct {
-	gchar *title;
-	gchar *value;
-	// short
-} MattermostAttachmentField;
-
-void mm_g_free_mattermost_attachment_field(gpointer f) 
-{
-	MattermostAttachmentField *af = f;
-	if (!af) return;
-	g_free(af->title);
-	g_free(af->value);
-	g_free(af);
-}
-
 static gchar *
 mm_process_attachment(JsonObject *attachment)
 {
 //TODO: sanitze input strings !
 //TODO: libpurple xhtml-im parser is .. fragile .. easy to get output not htmlized ...
-#define MM_ATT_LINE "<hr>"
-#define MM_ATT_BREAK "<br>"
-#define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
-#define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
-#define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
-#define MM_ATT_FTITLE(t) "<b>", t, "</b><br>"
-#define MM_ATT_IMAGE(i) "<a href=\"", i, "\">", i, "</a><br>"
-#define MM_ATT_TEXT(t) "<span>", t, "</span><br>"
 
 	gchar *msg_top = NULL;
 	gchar *msg_fields = NULL;
@@ -3031,9 +1952,6 @@ mm_process_attachment(JsonObject *attachment)
 
 	return message;
 }
-
-// Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
-#define	mm_data_or_broadcast_string(a) (json_object_has_member(data, (a)) ? json_object_get_string_member(data, (a)) : json_object_get_string_member(broadcast, (a)))
 
 static void
 mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
@@ -3299,12 +2217,6 @@ mm_get_or_create_default_group()
 	return mm_group;
 }
 
-typedef struct {
-	PurpleRoomlist *roomlist;
-	gchar *team_id;
-	gchar *team_desc;
-} MatterMostTeamRoomlist;
-
 static void
 mm_roomlist_got_list(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -3481,21 +2393,9 @@ mm_roomlist_get_list(PurpleConnection *pc)
 	{
 		MatterMostTeamRoomlist *mmtrl;
 		const gchar *team_id = i->data;
-		
-		//FIXME: dont. these appear already in pidgin main window.
-		// Get a list of channels the user has already joined
-		//mmtrl = g_new0(MatterMostTeamRoomlist, 1);
-		//mmtrl->team_id = g_strdup(team_id);
-		//mmtrl->team_desc = g_strdup(_(": Joined channels"));
-		//mmtrl->roomlist = roomlist;
 
-		//url = mm_build_url(ma,"/users/me/teams/%s/channels", team_id);
-		//mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, mm_roomlist_got_list, mmtrl);
-		//g_free(url);
-		
 		ma->roomlist_team_count++;
-		
-		
+
 		// Get a list of public channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
@@ -4071,7 +2971,7 @@ mm_socket_got_data(gpointer userdata, PurpleSslConnection *conn, PurpleInputCond
 		purple_debug_error("mattermost", "got errno %d, read_len %d from websocket thread\n", errno, read_len);
 
 		if (ma->frames_since_reconnect < 2) {
-			purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, "Lost connection to server");
+			purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Lost connection to server"));
 		} else {
 			// Try reconnect
 			mm_start_socket(ma);
@@ -4137,7 +3037,7 @@ mm_socket_failed(PurpleSslConnection *conn, PurpleSslErrorType errortype, gpoint
 	ma->websocket_header_received = FALSE;
 
 	if (ma->frames_since_reconnect < 1) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, "Couldn't connect to gateway");
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Couldn't connect to gateway"));
 	} else {
 		mm_restart_channel(ma);
 	}
@@ -4830,7 +3730,7 @@ mm_conversation_send_message_response(MattermostAccount *ma, JsonNode *node, gpo
 {
 	JsonObject *obj = json_node_get_object(node);
 	if (json_object_get_int_member(obj, "status_code") >= 400) {
-		purple_notify_error(ma->pc, "Error", "Error sending Message", json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
+		purple_notify_error(ma->pc, _("Error"), _("Error sending Message"), json_object_get_string_member(obj, "message"), purple_request_cpar_from_connection(ma->pc));
 	}
 }
 
@@ -4931,7 +3831,7 @@ mm_created_direct_message_send(MattermostAccount *ma, JsonNode *node, gpointer u
 	result = json_node_get_object(node);
 
 	if (json_object_get_int_member(result, "status_code") >= 400) {
-		purple_notify_error(ma->pc, "Error", "Error creating Mattermost Channel", json_object_get_string_member(result, "message"), purple_request_cpar_from_connection(ma->pc));
+		purple_notify_error(ma->pc, _("Error"), _("Error creating Mattermost Channel"), json_object_get_string_member(result, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 
@@ -4972,13 +3872,13 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 	if (room_id == NULL) {
 
 		if (purple_str_has_suffix(who, MATTERMOST_BOT_LABEL)) {
-			purple_notify_error(ma->pc, "Error", "You cannot send instant message to a BOT", "(However you may be able to interact with it using \"/cmd command\" in a chat)", purple_request_cpar_from_connection(ma->pc));
+			purple_notify_error(ma->pc, _("Error"), _("You cannot send instant message to a BOT"), _("(However you may be able to interact with it using \"/cmd command\" in a chat)"), purple_request_cpar_from_connection(ma->pc));
 			//TODO: 'disable' im conv window ?
 			return -1;
 		}
 
 		if (purple_strequal(who, ma->self->username)) {
-			purple_notify_error(ma->pc, "Error", "You cannot send instant message to yourself", "", purple_request_cpar_from_connection(ma->pc));
+			purple_notify_error(ma->pc, _("Error"), _("You cannot send instant message to yourself"), "", purple_request_cpar_from_connection(ma->pc));
 			//TODO: 'disable' im conv window ? 
 			return -1;
 		}
@@ -5264,7 +4164,7 @@ mm_got_add_buddy_user(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		
 		if (imconv != NULL) {
 			PurpleConversation *conv = PURPLE_CONVERSATION(imconv);
-			purple_conversation_write_system_message(conv, "Cannot sent message, invalid buddy", PURPLE_MESSAGE_ERROR);
+			purple_conversation_write_system_message(conv, _("Cannot sent message, invalid buddy"), PURPLE_MESSAGE_ERROR);
 		} else {
 			purple_notify_error(ma->pc, _("Add Buddy Error"), _("There was an error searching for the user"), json_object_get_string_member(user, "message"), purple_request_cpar_from_connection(ma->pc));
 		}
@@ -5355,7 +4255,7 @@ mm_create_direct_channel_response(MattermostAccount *ma, JsonNode *node, gpointe
 	const gchar *room_id;
 
 	if (json_object_get_int_member(response, "status_code") >= 400) {
-		purple_notify_error(ma->pc, "Error", "Error creating Mattermost Channel", json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
+		purple_notify_error(ma->pc, _("Error"), _("Error creating Mattermost Channel"), json_object_get_string_member(response, "message"), purple_request_cpar_from_connection(ma->pc));
 		return;
 	}
 
@@ -5381,30 +4281,20 @@ mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy)
 {
 	gchar *url, *postdata;
 	const gchar *user_id;
-	//JsonObject *data;
 	JsonArray *data;
 
 	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "room_id")) {
 		return;
 	}
 
-	//data = json_object_new();
 	data = json_array_new();
 
 	user_id = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "user_id");
-	//json_object_set_string_member(data, "user_id", user_id);
-
 	json_array_add_string_element(data, user_id);
 	json_array_add_string_element(data, ma->self->user_id);
 
-	//postdata = json_object_to_string(data);
-
 	postdata = json_array_to_string(data);
-	//url = mm_build_url(ma,"/teams/%s/channels/create_direct", mm_get_first_team_id(ma)); 
 	url = mm_build_url(ma,"/channels/direct");
-	//FIXME:is this buddy on that team ? 
-	//		We need to get info about user first
-	//		but still on which team are we on now ?
 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_create_direct_channel_response, g_strdup(user_id));
 
@@ -5413,7 +4303,7 @@ mm_create_direct_channel(MattermostAccount *ma, PurpleBuddy *buddy)
 }
 
 
-static void
+void
 mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message)
 {
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
@@ -5464,14 +4354,6 @@ mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const
 
 	mm_refresh_statuses(ma, user_id);
 }
-
-#if !PURPLE_VERSION_CHECK(3, 0, 0)
-static void
-mm_add_buddy_no_message(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group)
-{
-	mm_add_buddy(pc, buddy, group, NULL);
-}
-#endif
 
 static const char *
 mm_list_icon(PurpleAccount *account, PurpleBuddy *buddy)
@@ -5876,26 +4758,26 @@ static PurplePluginInfo info = {
 	PURPLE_MINOR_VERSION,
 */
 	2, 1,
-	PURPLE_PLUGIN_PROTOCOL,          // type
-	NULL,                            // ui_requirement
-	0,                               // flags 
-	NULL,                            // dependencies 
-	PURPLE_PRIORITY_DEFAULT,         // priority
-	MATTERMOST_PLUGIN_ID,            // id
-	"Mattermost",                    // name
-	MATTERMOST_PLUGIN_VERSION,       // version
-	"",                              // summary
-	"",                              // description
-	"Eion Robb <eion@robbmob.com>",  // author
-	MATTERMOST_PLUGIN_WEBSITE,       // homepage
-	libpurple2_plugin_load,          // load
-	libpurple2_plugin_unload,        // unload
-	NULL,                            // destroy
-	NULL,                            // ui_info
-	NULL,                            // extra_info
-	NULL,                            // prefs_info
-	NULL,                            // actions
-	NULL,                            // padding
+	PURPLE_PLUGIN_PROTOCOL,            // type
+	NULL,                              // ui_requirement
+	0,                                 // flags 
+	NULL,                              // dependencies 
+	PURPLE_PRIORITY_DEFAULT,           // priority
+	MATTERMOST_PLUGIN_ID,              // id
+	"Mattermost",                      // name
+	MATTERMOST_PLUGIN_VERSION,         // version
+	N_("Mattermost Protocol Plugin."), // summary
+	N_("Adds Mattermost protocol support to libpurple."), // description
+	"Eion Robb <eion@robbmob.com>",    // author
+	MATTERMOST_PLUGIN_WEBSITE,         // homepage
+	libpurple2_plugin_load,            // load
+	libpurple2_plugin_unload,          // unload
+	NULL,                              // destroy
+	NULL,                              // ui_info
+	NULL,                              // extra_info
+	NULL,                              // prefs_info
+	NULL,                              // actions
+	NULL,                              // padding
 	NULL,
 	NULL,
 	NULL
@@ -5905,26 +4787,6 @@ PURPLE_INIT_PLUGIN(mattermost, plugin_init, info);
 
 #else
 //Purple 3 plugin load functions
-
-
-G_MODULE_EXPORT GType mm_protocol_get_type(void);
-#define MATTERMOST_TYPE_PROTOCOL			(mm_protocol_get_type())
-#define MATTERMOST_PROTOCOL(obj)			(G_TYPE_CHECK_INSTANCE_CAST((obj), MATTERMOST_TYPE_PROTOCOL, MattermostProtocol))
-#define MATTERMOST_PROTOCOL_CLASS(klass)	(G_TYPE_CHECK_CLASS_CAST((klass), MATTERMOST_TYPE_PROTOCOL, MattermostProtocolClass))
-#define MATTERMOST_IS_PROTOCOL(obj)			(G_TYPE_CHECK_INSTANCE_TYPE((obj), MATTERMOST_TYPE_PROTOCOL))
-#define MATTERMOST_IS_PROTOCOL_CLASS(klass)	(G_TYPE_CHECK_CLASS_TYPE((klass), MATTERMOST_TYPE_PROTOCOL))
-#define MATTERMOST_PROTOCOL_GET_CLASS(obj)	(G_TYPE_INSTANCE_GET_CLASS((obj), MATTERMOST_TYPE_PROTOCOL, MattermostProtocolClass))
-
-typedef struct _MattermostProtocol
-{
-	PurpleProtocol parent;
-} MattermostProtocol;
-
-typedef struct _MattermostProtocolClass
-{
-	PurpleProtocolClass parent_class;
-} MattermostProtocolClass;
-
 
 static void
 mm_protocol_init(PurpleProtocol *prpl_info)
@@ -5940,7 +4802,6 @@ mm_protocol_init(PurpleProtocol *prpl_info)
 	split = purple_account_user_split_new(_("Server"), MATTERMOST_DEFAULT_SERVER, MATTERMOST_SERVER_SPLIT_CHAR);
 	info->user_splits = g_list_append(info->user_splits, split);
 }
-
 
 static void
 mm_protocol_class_init(PurpleProtocolClass *prpl_info)
@@ -6026,7 +4887,6 @@ PURPLE_DEFINE_TYPE_EXTENDED(
 
 );
 
-
 static gboolean
 libpurple3_plugin_load(PurplePlugin *plugin, GError **error)
 {
@@ -6058,7 +4918,7 @@ plugin_query(GError **error)
 		"name",        "Mattermost",
 		"version",     MATTERMOST_PLUGIN_VERSION,
 		"category",    N_("Protocol"),
-		"summary",     N_("Mattermost Protocol Plugins."),
+		"summary",     N_("Mattermost Protocol Plugin."),
 		"description", N_("Adds Mattermost protocol support to libpurple."),
 		"website",     MATTERMOST_PLUGIN_WEBSITE,
 		"abi-version", PURPLE_ABI_VERSION,
