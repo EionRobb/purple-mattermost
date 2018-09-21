@@ -28,6 +28,7 @@ void mm_g_free_mattermost_user(gpointer a);
 void mm_g_free_mattermost_channel(gpointer a);
 void mm_g_free_mattermost_file(gpointer a);
 void mm_g_free_mattermost_attachment_field(gpointer f);
+void mm_g_free_mattermost_client_config(gpointer a);
 
 int mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b);
 int mm_compare_channels_by_type_int(gconstpointer a, gconstpointer b);
