@@ -29,9 +29,12 @@ void mm_g_free_mattermost_channel(gpointer a);
 void mm_g_free_mattermost_file(gpointer a);
 void mm_g_free_mattermost_attachment_field(gpointer f);
 void mm_g_free_mattermost_client_config(gpointer a);
+void mm_g_free_mattermost_command(gpointer a);
 
 int mm_compare_channels_by_display_name_int(gconstpointer a, gconstpointer b);
 int mm_compare_channels_by_type_int(gconstpointer a, gconstpointer b);
 int mm_compare_users_by_alias_int(gconstpointer a, gconstpointer b);
+int	mm_compare_cmd_int(gconstpointer a, gconstpointer b);
+int	mm_compare_cmd_2_int(gconstpointer a, gconstpointer b);
 
 #endif /* _LIBMATTERMOST_HELPERS_H_ */

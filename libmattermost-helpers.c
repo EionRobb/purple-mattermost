@@ -146,6 +146,45 @@ mm_g_free_mattermost_client_config(gpointer a)
 	g_free(cc);
 }
 
+void
+mm_g_free_mattermost_command(gpointer a)
+{
+	MattermostCommand *c = a;
+	if (!c) return;
+	g_free(c->trigger);
+	g_free(c->team_id);
+	g_free(c->display_name);
+	g_free(c->description);
+	g_free(c->auto_complete_hint);
+	g_free(c->auto_complete_desc);
+	g_free(c);
+}
+
+int
+mm_compare_cmd_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostCommand *c1 = a;
+	const MattermostCommand *c2 = b;
+	if (!g_strcmp0(c1->trigger,c2->trigger) &&
+			!g_strcmp0(c1->team_id,c2->team_id)) return 0;
+
+	return -1;
+}
+
+int
+mm_compare_cmd_2_int(gconstpointer a, gconstpointer b)
+{
+	const MattermostCommand *c1 = a;
+	const MattermostCommand *c2 = b;
+
+	gint res = g_strcmp0(c1->trigger,c2->trigger);
+
+	if (res < 0) { return -1;}
+	if (res > 0) { return 1;}
+
+	return 0;
+}
+
 int
 mm_compare_users_by_id_int(gconstpointer a, gconstpointer b)
 {

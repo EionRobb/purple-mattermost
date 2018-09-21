@@ -181,6 +181,8 @@ typedef struct {
 	GList *user_prefs;            // all user preferences read from server
 	GList *joined_channels;       // all channels for which we performed mm_join_room and have not left;
 	GList *mention_words;         // terms set up in MM account settings which trigger notifications.
+	GList *commands;              // available slash commands
+
 	GSList *http_conns; /**< PurpleHttpConnection to be cancelled on logout */
 	gint frames_since_reconnect;
 	GSList *pending_writes;
@@ -286,6 +288,18 @@ typedef struct {
 	gchar *repl;
 } MattermostRegexElement;
 
+typedef struct {
+	gchar *trigger;
+	gchar *team_id;
+	gchar *display_name;
+	gchar *description;
+	gchar *auto_complete_hint;
+	gchar *auto_complete_desc;
+} MattermostCommand;
+
 void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
+void mm_get_commands_for_team(MattermostAccount *ma,const gchar *team_id);
+PurpleCmdRet mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer userdata);
+
 
 #endif /* _LIBMATTERMOST_H_ */
