@@ -15,6 +15,7 @@ Connects libpurple-based instant messaging clients (such as Pidgin, Finch, Adium
 - Add/Remove buddies.
 - User search via **Accounts > {Mattermost Account} > Search for Users...**
 - Channel search via **Accounts > {Mattermost Account} > Room List**
+- Server information via **Accounts > {Mattermost Account} > Server Info**
 
 Not implemented yet:
 
@@ -24,7 +25,7 @@ Not implemented yet:
 **Core Communication**
  
 - Send and receive messages, including weblinks, emoji and images.
-- Display of online/offline/away status. 
+- Display of online/offline/busy/away status. 
 - Sending of read notifications so the server understands users is still online. 
 - Display of messages sent while Pidgin was offline. 
 - Mark messages edited by a Mattermost user as "Edited:"
@@ -66,8 +67,10 @@ For modifying or extending this project please follow the [Linux Client Install 
 
 ## Changelog 
 
-- April 18, 2017 - Pidgin-Mattermost v0.0 - Project started 
-- April 23, 2017 - Pidgin-Mattermost v1.0 - Initial Release   
+- April 18, 2017     - Pidgin-Mattermost v0.0 - Project started 
+- April 23, 2017     - Pidgin-Mattermost v1.0 - Initial Release   
+- April 28, 2017     - Pidgin-Mattermost v1.1 - Support non-HTTPS servers, various fixes
+- September 20, 2017 - Pidgin-Mattermost v1.2 - Gitlab authentication, Multi-team support, various fixes
 
 ## Verification 
 
