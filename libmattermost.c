@@ -4819,6 +4819,11 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 	PurpleConnection *pc = purple_account_get_connection(pa);
 	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
 
+	if (!ma->client_config->enable_file_attachments) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Server does not allow file attachments."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
 
 	xfer->filename = g_path_get_basename(xfer->local_filename);
 
@@ -4832,14 +4837,9 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 		return;
 	}
 
-	FILE *fp = fopen(purple_xfer_get_local_filename(xfer),"rb");
 	gpointer *buffer = g_try_malloc(xfer->size);
 
-	if (fp == NULL) {
-		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot open file."), purple_request_cpar_from_connection(ma->pc));
-		purple_xfer_cancel_local(xfer);
-		return;
-	}
+	//FIXME?: Can xfer->fd be 0 here ? (guess not)
 
 	if (buffer == NULL) {
 		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot allocate memory."), purple_request_cpar_from_connection(ma->pc));
@@ -4847,14 +4847,11 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 		return;
 	}
 
-	if (!fread(buffer, xfer->size, 1, fp)) {
+	if (!read(xfer->fd,buffer,xfer->size)) {
 		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot read file."), purple_request_cpar_from_connection(ma->pc));
 		purple_xfer_cancel_local(xfer);
-		fclose(fp);
 		return;
 	}
-
-	fclose(fp);
 
 	xfer->bytes_sent = xfer->size;
 	xfer->bytes_remaining = 0;
