@@ -341,22 +341,31 @@ mm_send_email_menu_cb(PurpleBlistNode *bnode)
 
 static void mm_send_file(PurpleConnection *gc, const char *who, const char *file);
 
-/*
+
 static void 
 mm_send_file_menu_cb(PurpleBlistNode *bnode)
 {
+//THE PROBLEM
+// For some reason we get here with bnode pointing to nowhere !
+// (libpurple 2.10) while called from chat conversation window.
 
-//	GHashTable *components = purple_chat_get_components(PURPLE_CHAT(bnode));
-//	const gchar *channel_id = g_hash_table_lookup(components, "id");
+//THE WORKAROUND: find active conversation with focus and 'discover'
+//where from we were called...yes. hackish...
+ 
+	GList *convs = purple_get_conversations();
+	GList *aconv = NULL;
 
-//	PurpleAccount *pa = purple_chat_get_account(chat);
-//	PurpleConnection *pc = purple_account_get_connection(pa);
-//	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
-
-    //FIXME: bnode does not point to our chat ? why ?
-//	mm_send_file(pc, who, NULL); 
+	for (aconv = convs; aconv != NULL; aconv = g_list_next(aconv)) {
+		PurpleConversation *thisconv = aconv->data;
+		if (purple_conversation_has_focus(thisconv)) {
+			const gchar *who = purple_conversation_get_data(thisconv,"id");
+			PurpleConnection *pc = purple_conversation_get_connection(thisconv);
+			mm_send_file(pc, who, NULL);
+			return;
+		}
+	}
 }
-*/
+
 
 static GList *
 mm_blist_node_menu(PurpleBlistNode *bnode)
@@ -367,9 +376,9 @@ mm_blist_node_menu(PurpleBlistNode *bnode)
 		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"), PURPLE_CALLBACK(mm_send_email_menu_cb), NULL, NULL);
 		menu = g_list_append(menu, action);
 	} else if (PURPLE_IS_CHAT(bnode)) {
+		PurpleMenuAction *action = purple_menu_action_new(_("Send File"), PURPLE_CALLBACK(mm_send_file_menu_cb), NULL, NULL);
+		menu = g_list_append(menu, action);
 		//FIXME: bnode is not NULL here but ... points to nowhere ?
-		//PurpleMenuAction *action = purple_menu_action_new(_("Send File"), PURPLE_CALLBACK(mm_send_file_menu_cb), NULL, NULL);
-		//menu = g_list_append(menu, action);
 	} 
 	
 	return menu;
@@ -4658,6 +4667,7 @@ mm_cmd_leave(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 	return PURPLE_CMD_RET_OK;
 }
 
+/*
 static PurpleCmdRet
 mm_cmd_sendfile(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data)
 {
@@ -4674,6 +4684,7 @@ mm_cmd_sendfile(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar 
 
   return PURPLE_CMD_RET_FAILED;
 }
+*/
 
 static void
 mm_slash_command_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -4794,11 +4805,11 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						_("leave:  Leave the channel"), NULL);
 
   // Send file cannot be enabled somehow in chats ...
-  purple_cmd_register("sendfile", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
+/*  purple_cmd_register("sendfile", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_sendfile,
 						_("sendfile:  Upload a file to the channel"), NULL);
-
+*/
 	return TRUE;
 
 }

@@ -26,7 +26,7 @@ Not implemented yet:
  
 - Send and receive messages, including weblinks, emoji and images.
 - Display of online/offline/busy/away status. 
-- Send files - using **/sendfile** command in chats, via **Conversation > Send File** in direct conversations.
+- Send files via **Conversation > More > Send File** in chats, via **Conversation > Send File** in direct conversations.
 - Sending of read notifications so the server understands users is still online. 
 - Display of messages sent while Pidgin was offline. 
 - Mark messages edited by a Mattermost user as "Edited:"
