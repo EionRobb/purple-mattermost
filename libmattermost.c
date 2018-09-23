@@ -4880,6 +4880,10 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 static void
 mm_send_file(PurpleConnection *pc, const char *who, const char *file) 
 {
+	if (who == NULL) {
+		purple_notify_error(pc, _("Error"), _("Error sending file"), _("Undefined channel."), purple_request_cpar_from_connection(pc));
+	return;
+	}
 
 	PurpleXfer *xfer = purple_xfer_new(purple_connection_get_account(pc), PURPLE_XFER_SEND, who);
 
