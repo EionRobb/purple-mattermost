@@ -354,16 +354,28 @@ mm_send_file_menu_cb(PurpleBlistNode *bnode)
  
 	GList *convs = purple_get_conversations();
 	GList *aconv = NULL;
+	PurpleConnection *pc = NULL;
 
 	for (aconv = convs; aconv != NULL; aconv = g_list_next(aconv)) {
 		PurpleConversation *thisconv = aconv->data;
+		pc = purple_conversation_get_connection(thisconv);
+
 		if (purple_conversation_has_focus(thisconv)) {
 			const gchar *who = purple_conversation_get_data(thisconv,"id");
-			PurpleConnection *pc = purple_conversation_get_connection(thisconv);
 			mm_send_file(pc, who, NULL);
 			return;
 		}
 	}
+
+//The WORKAROUND part 2:
+//purple_conversation_has_focus() may be NOT implememented in
+// (G)UIs (it is in pidgin), propose something ...
+
+	if (pc) 
+		purple_notify_error(pc, _("Error"),
+				_("Cannot initialize Send File"),
+				_("Use '/sendfile' command in conversation window instead."),
+				purple_request_cpar_from_connection(pc));
 }
 
 
@@ -806,6 +818,10 @@ mm_about_commands(PurpleProtocolAction *action)
 	PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
 	GList *i = NULL;
 	MattermostCommand *cmd = NULL;
+	
+	purple_notify_user_info_add_pair_plaintext(user_info,"leave","/leave | Leave the channel");
+	purple_notify_user_info_add_pair_plaintext(user_info,"sendfile","/sendfile | Send File to channel");
+
 	for(i=ma->commands;i;i=i->next) {
 		cmd = i->data;
 		const gchar *info = g_strconcat("/",cmd->trigger," ",
@@ -3890,7 +3906,7 @@ mm_conversation_send_file_response(MattermostAccount *ma, JsonNode *node, gpoint
 
 		//we send an empty message here with just file_ids
 
- 	  mm_conversation_send_message(ma, NULL, channel_id, "", file_ids);
+ 		mm_conversation_send_message(ma, NULL, channel_id, "", file_ids);
 
     if (g_hash_table_lookup(ma->group_chats, channel_id)) {
       purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), "[purple-mattermost]" , PURPLE_MESSAGE_SYSTEM|PURPLE_MESSAGE_RECV, g_strconcat("file sent (",name,")",NULL), time(NULL));
@@ -4667,24 +4683,32 @@ mm_cmd_leave(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 	return PURPLE_CMD_RET_OK;
 }
 
-/*
+
 static PurpleCmdRet
 mm_cmd_sendfile(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data)
 {
-  const gchar *who;
+	const gchar *who;
 
 	PurpleConnection *pc = purple_conversation_get_connection(conv);
 
-  if (purple_conversation_get_type(conv) == PURPLE_CONV_TYPE_CHAT) {
-    who = purple_conversation_get_data(conv, "id");
-    mm_send_file(pc, who, NULL);
+	if (pc == NULL) {
+		return PURPLE_CMD_RET_FAILED;
+	}
+	
+	if (PURPLE_IS_IM_CONVERSATION(conv)) {
+		who = purple_conversation_get_name(conv);
+	} else {
+		who = purple_conversation_get_data(conv, "id");
+	}
 
-    return PURPLE_CMD_RET_OK;
-  } 
+	if (who) {
+		mm_send_file(pc, who, NULL);
+		return PURPLE_CMD_RET_OK;
+	}
 
-  return PURPLE_CMD_RET_FAILED;
+	return PURPLE_CMD_RET_FAILED;
 }
-*/
+
 
 static void
 mm_slash_command_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -4729,6 +4753,8 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 	if (channel_id == NULL) {
 		return PURPLE_CMD_RET_FAILED;
 	}
+
+	// FIXME: We get 'you do not have the appropriate permissions' from server here ..?
 
 	if (PURPLE_IS_IM_CONVERSATION(conv)) {
 		purple_notify_error(pc, _("Error"), _("Not implemented."), 
@@ -4804,12 +4830,10 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
 						_("leave:  Leave the channel"), NULL);
 
-  // Send file cannot be enabled somehow in chats ...
-/*  purple_cmd_register("sendfile", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT |
+	 purple_cmd_register("sendfile", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
 						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
 						MATTERMOST_PLUGIN_ID, mm_cmd_sendfile,
 						_("sendfile:  Upload a file to the channel"), NULL);
-*/
 	return TRUE;
 
 }
@@ -4873,7 +4897,6 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 
 	purple_xfer_set_completed(xfer, TRUE);
 	purple_xfer_end(xfer);
-	purple_xfer_unref(xfer);
 	//g_free(buffer); in mm_conversation_send_file
 }
 
