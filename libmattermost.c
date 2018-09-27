@@ -987,14 +987,13 @@ mm_get_channel_by_id_response(MattermostAccount *ma, JsonNode *node, gpointer us
 		g_hash_table_insert(defaults, "id", g_strdup(id));
 		g_hash_table_insert(defaults, "type", g_strdup(type));
 		g_hash_table_insert(defaults, "creator_id", g_strdup(creator_id));
+		g_hash_table_insert(defaults,"display_name",g_strdup(display_name));
 
 		if (type && *(type) != MATTERMOST_CHANNEL_GROUP) {
 			g_hash_table_insert(defaults, "name", g_strconcat(name, MATTERMOST_CHANNEL_SEPARATOR, g_hash_table_lookup(ma->teams, team_id), NULL));
 		} else {
 			g_hash_table_insert(defaults, "name", g_strdup(name));	
 		}
-
-		//g_hash_table_insert(defaults,"display_name",g_strdup(alias));
 
 		chat = purple_chat_new(ma->account, alias, defaults);
 		purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
