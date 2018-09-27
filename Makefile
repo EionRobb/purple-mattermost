@@ -87,7 +87,7 @@ WIN32_PIDGIN3_LDFLAGS = -L$(PIDGIN3_TREE_TOP)/libpurple -L$(WIN32_DEV_TOP)/gplug
 
 C_FILES := 
 PURPLE_COMPAT_FILES := purple2compat/http.c purple2compat/purple-socket.c
-PURPLE_C_FILES := purplecompat.c libmattermost-helpers.c libmattermost-json.c libmattermost-markdown.c libmattermost.c $(C_FILES)
+PURPLE_C_FILES := purplecompat.c libmattermost-helpers.c libmattermost-json.c libmattermost-markdown.c libmattermost-msgprocess.c libmattermost-mmrequests.c libmattermost-mmsocket.c libmattermost.c $(C_FILES)
 
 
 
