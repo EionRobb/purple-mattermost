@@ -26,7 +26,7 @@
 #ifndef MATTERMOST_PLUGIN_VERSION
 #define MATTERMOST_PLUGIN_VERSION "1.1"
 #endif
-#define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/mattermost-libpurple"
+#define MATTERMOST_PLUGIN_WEBSITE "https://github.com/EionRobb/purple-mattermost"
 
 #define MATTERMOST_USERAGENT "libpurple"
 #define MATTERMOST_API_EP "/api/v4"
