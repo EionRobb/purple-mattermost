@@ -270,3 +270,233 @@ mm_compare_prefs_int(gconstpointer a, gconstpointer b)
 	} 
 	return -1;
 }
+
+const gchar *
+mm_split_topic(gchar *str)
+{
+	gchar *p = g_strstr_len(str, -1, MATTERMOST_CHAT_TOPIC_SEP);
+	if (p == NULL) return NULL;
+	*p = '\0';
+	return p + strlen(MATTERMOST_CHAT_TOPIC_SEP);
+}
+
+const gchar * 
+mm_make_topic(const gchar *header, const gchar *purpose, const gchar *old_topic)
+{
+	//TODO: limit len !
+	const gchar *old_purpose = mm_split_topic((gchar *)old_topic);
+	const gchar *old_header = old_topic;
+
+	const gchar *topic = g_strconcat((header && *header) ? header : old_header, MATTERMOST_CHAT_TOPIC_SEP, (purpose && *purpose) ? purpose : old_purpose, NULL);
+
+	return topic;	
+}
+
+gchar *
+mm_get_alias(MattermostUser *mu)
+{
+	gchar *nickname = NULL;
+	gchar *full_name = NULL;
+	gchar *alias = NULL;
+
+	if (mu->nickname && *mu->nickname) { nickname = g_strconcat(" (",mu->nickname,")",NULL); }
+	full_name = g_strconcat(mu->first_name ? mu->first_name : "", (mu->first_name && *mu->first_name) ? " " : "", mu->last_name, nickname,  NULL);
+    alias = g_strdup((full_name && *full_name) ? full_name : (mu->email && *mu->email) ? mu->email : NULL);
+
+	g_free(nickname);	
+	g_free(full_name);
+	
+	return alias;
+}
+
+gchar *
+mm_get_chat_alias(MattermostAccount *ma, MattermostChannel *ch)
+{
+	gchar *alias = NULL;
+	gchar *type = NULL;
+
+	//FIXME: redo with some pattern matching.. this is ugly.
+	if (ch->type && purple_strequal(ch->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_GROUP))) {
+		const gchar *tmpa = g_strjoinv("", g_strsplit(ch->display_name, ma->username, -1));
+		const gchar *tmpb = g_strjoinv(",", g_strsplit(tmpa,", ",-1));
+		const gchar *tmpc = g_strjoinv(",", g_strsplit(tmpb,",,",-1));
+		if (g_str_has_prefix(tmpc,",")) {
+			alias = g_strndup(tmpc+1,strlen(tmpc));
+		} else {
+			alias = g_strdup(tmpc);
+		}	
+		return alias;
+	}
+
+	type = g_strconcat((ch->type && purple_strequal(ch->type,MATTERMOST_CHANNEL_TYPE_STRING(MATTERMOST_CHANNEL_PRIVATE))) ? MATTERMOST_CHANNEL_PRIVATE_VISUAL : "", NULL);
+
+	alias = g_strconcat(type, ch->display_name, MATTERMOST_CHANNEL_SEPARATOR_VISUAL, g_hash_table_lookup(ma->teams_display_names, ch->team_id), NULL);
+
+	g_free(type);
+
+	return alias;
+}
+
+static void
+mm_cookie_foreach_cb(gchar *cookie_name, gchar *cookie_value, GString *str)
+{
+	g_string_append_printf(str, "%s=%s;", cookie_name, cookie_value);
+}
+
+gchar *
+mm_cookies_to_string(MattermostAccount *ma)
+{
+	GString *str;
+
+	str = g_string_new(NULL);
+
+	g_hash_table_foreach(ma->cookie_table, (GHFunc)mm_cookie_foreach_cb, str);
+
+	return g_string_free(str, FALSE);
+}
+
+PurpleChatUserFlags
+mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist)
+{
+	PurpleChatUserFlags flags = PURPLE_CHAT_USER_NONE;
+	gchar **roles = g_strsplit_set(rolelist, " ", -1);
+	gint i;
+	
+	for(i = 0; roles[i]; i++) {
+		const gchar *role = roles[i];
+		
+		// we are always channel_user			
+		if (purple_strequal(role, "channel_admin")) {
+			flags |= PURPLE_CHAT_USER_OP;
+		} else if (purple_strequal(role, "system_admin")) {
+			flags |= PURPLE_CHAT_USER_FOUNDER;
+		} 
+	}
+	
+	g_strfreev(roles);
+	
+	return flags;
+}
+
+gchar *
+mm_purple_flag_to_role(PurpleChatUserFlags flags)
+{
+	const gchar *cu_str = _("Channel User");
+	const gchar *ca_str = _("Channel Administrator");
+	const gchar *sa_str = _("System Administrator");
+	gboolean ca = FALSE;
+	gboolean sa = FALSE;
+
+	// we are always channel_user
+	if (flags & PURPLE_CHAT_USER_OP) {
+		ca = TRUE;
+	}
+	if (flags & PURPLE_CHAT_USER_FOUNDER) {
+		sa = TRUE;
+	}
+
+	return g_strjoin(", ", cu_str, ca ? ca_str : "", sa ? sa_str : "", NULL);
+}
+
+PurpleGroup *
+mm_get_or_create_default_group()
+{
+	PurpleGroup *mm_group = NULL;
+
+	mm_group = purple_blist_find_group(MATTERMOST_DEFAULT_BLIST_GROUP_NAME);
+	if (!mm_group)
+	{
+		mm_group = purple_group_new(MATTERMOST_DEFAULT_BLIST_GROUP_NAME);
+		purple_blist_add_group(mm_group, NULL);
+	}
+	
+	return mm_group;
+}
+
+void
+mm_set_user_blist(MattermostAccount *ma, MattermostUser *mu, PurpleBuddy *buddy)
+{
+	PurpleBlistNode *bnode = PURPLE_BLIST_NODE(buddy);
+
+	purple_blist_node_set_string(bnode, "nickname", mu->nickname);	
+	purple_blist_node_set_string(bnode, "first_name", mu->first_name);
+	purple_blist_node_set_string(bnode, "last_name", mu->last_name);
+
+	// room_id exists only if a direct channel has been created.
+	if (mu->room_id && *mu->room_id) { 
+		purple_blist_node_set_string(bnode, "room_id", mu->room_id);
+	}
+
+	purple_blist_node_set_string(bnode, "email", mu->email);
+	purple_blist_node_set_string(bnode, "locale", mu->locale);
+	purple_blist_node_set_string(bnode, "position", mu->position);
+	purple_blist_node_set_int(bnode, "roles", mu->roles);
+
+	if(purple_account_get_bool(ma->account, "use-alias", FALSE)) {
+		gchar *alias = g_strdup(mm_get_alias(mu));
+		purple_buddy_set_local_alias(buddy, alias);
+		g_free(alias);
+	}	
+
+}
+
+PurpleNotifyUserInfo *
+mm_user_info(MattermostUser *mu)
+{
+	PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Nickname"), mu->nickname);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("First Name"), mu->first_name);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Last Name"), mu->last_name);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Email address"), mu->email);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Position"), mu->position);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Locale"), mu->locale);
+	purple_notify_user_info_add_section_break(user_info);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Username"), mu->username);	
+	purple_notify_user_info_add_pair_plaintext(user_info,_("User ID"), mu->user_id);
+
+	gchar *rolelist = mm_purple_flag_to_role(mu->roles);
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Roles"), rolelist);
+	g_free(rolelist);
+
+	return user_info;
+}
+
+void
+mm_set_group_chat(MattermostAccount *ma, const gchar *team_id, const gchar *channel_name, const gchar *channel_id)
+{
+	g_hash_table_replace(ma->group_chats, g_strdup(channel_id), g_strdup(channel_name));
+	g_hash_table_replace(ma->group_chats_rev, g_strdup(channel_name), g_strdup(channel_id));
+	if (team_id) g_hash_table_replace(ma->channel_teams, g_strdup(channel_id), g_strdup(team_id));
+}
+
+const gchar *
+mm_get_first_team_id(MattermostAccount *ma)
+{
+	GList *team_ids = g_hash_table_get_keys(ma->teams);
+	const gchar *first_team_id = team_ids ? team_ids->data : NULL;
+	
+	g_list_free(team_ids);
+	
+	return first_team_id;
+}
+
+gint
+mm_get_next_seq(MattermostAccount *ma)
+{
+	return ma->seq++;
+}
+
+gint
+mm_get_next_seq_callback(MattermostAccount *ma, MattermostProxyCallbackFunc callback, gpointer user_data)
+{
+	gint seq = mm_get_next_seq(ma);
+	MattermostProxyConnection *proxy = g_new0(MattermostProxyConnection, 1);
+	
+	proxy->ma = ma;
+	proxy->callback = callback;
+	proxy->user_data = user_data;
+	
+	g_hash_table_insert(ma->result_callbacks, GINT_TO_POINTER(seq), proxy);
+	
+	return seq;
+}

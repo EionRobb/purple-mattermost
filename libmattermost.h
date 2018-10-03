@@ -89,9 +89,6 @@
 	} \
 }
 
-// Helper function for picking from either 'data' or 'broadcast', since values can be in either depending on who added/removed
-#define	mm_data_or_broadcast_string(a) (json_object_has_member(data, (a)) ? json_object_get_string_member(data, (a)) : json_object_get_string_member(broadcast, (a)))
-
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
 #ifndef PurpleChatUserFlags
 #define PurpleChatUserFlags  PurpleConvChatBuddyFlags
@@ -298,8 +295,15 @@ typedef struct {
 } MattermostCommand;
 
 void mm_add_buddy(PurpleConnection *pc, PurpleBuddy *buddy, PurpleGroup *group, const char *message);
-void mm_get_commands_for_team(MattermostAccount *ma,const gchar *team_id);
 PurpleCmdRet mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer userdata);
-
+void mm_get_channel_by_id(MattermostAccount *ma, const gchar *channel_id);
+PurpleChat *mm_purple_blist_find_chat(MattermostAccount *ma, const gchar *channel_id);
+void mm_remove_group_chat(MattermostAccount *ma, const gchar *channel_id);
+void mm_get_users_by_ids(MattermostAccount *ma, GList *ids);
+void mm_got_hello_user_statuses(MattermostAccount *ma, JsonNode *node, gpointer user_data);
+void mm_refresh_statuses(MattermostAccount *ma, const gchar *id);
+void mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, const gchar *channel_id, const gchar *username, gint64 timestamp);
+void mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id);
+gboolean mm_idle_updater_timeout(gpointer data);
 
 #endif /* _LIBMATTERMOST_H_ */

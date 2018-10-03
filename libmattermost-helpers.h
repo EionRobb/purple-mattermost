@@ -37,4 +37,24 @@ int mm_compare_users_by_alias_int(gconstpointer a, gconstpointer b);
 int	mm_compare_cmd_int(gconstpointer a, gconstpointer b);
 int	mm_compare_cmd_2_int(gconstpointer a, gconstpointer b);
 
+#include "libmattermost.h"
+
+gchar *mm_get_alias(MattermostUser *mu);
+gchar *mm_get_chat_alias(MattermostAccount *ma, MattermostChannel *ch);
+const gchar *mm_make_topic(const gchar *header, const gchar *purpose, const gchar *old_topic);
+gchar *mm_cookies_to_string(MattermostAccount *ma);
+
+PurpleChatUserFlags mm_role_to_purple_flag(MattermostAccount *ma, const gchar *rolelist);
+gchar *mm_purple_flag_to_role(PurpleChatUserFlags flags);
+
+PurpleGroup *mm_get_or_create_default_group(void);
+void mm_set_user_blist(MattermostAccount *ma, MattermostUser *mu, PurpleBuddy *buddy);
+PurpleNotifyUserInfo *mm_user_info(MattermostUser *mu);
+
+void mm_set_group_chat(MattermostAccount *ma, const gchar *team_id, const gchar *channel_name, const gchar *channel_id);
+const gchar *mm_get_first_team_id(MattermostAccount *ma);
+
+gint mm_get_next_seq(MattermostAccount *ma);
+gint mm_get_next_seq_callback(MattermostAccount *ma, MattermostProxyCallbackFunc callback, gpointer user_data);
+
 #endif /* _LIBMATTERMOST_HELPERS_H_ */

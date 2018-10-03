@@ -19,16 +19,6 @@
 #ifndef _LIBMATTERMOST_MARKDOWN_H_
 #define _LIBMATTERMOST_MARKDOWN_H_
 
-// Markdown to imhtml
-#define MM_ATT_LINE "<hr>"
-#define MM_ATT_BREAK "<br>"
-#define MM_ATT_BORDER(c) "<font back=\"", color, "\" color=\"", color, "\">I</font> "
-#define MM_ATT_AUTHOR(a,l)  "<a href=\"", l, "\"><b>", a, "</b></a><br>"
-#define MM_ATT_TITLE(t,l) "<a href=\"", l, "\"><font size=\"5\"><b>", t, "</b></font></a> <br>"
-#define MM_ATT_FTITLE(t) "<b>", t, "</b><br>"
-#define MM_ATT_IMAGE(i) "<a href=\"", i, "\">", i, "</a><br>"
-#define MM_ATT_TEXT(t) "<span>", t, "</span><br>"
-
 //#include <mkdio.h>
 
 #define MKD_NOLINKS	0x00000001	/* don't do link processing, block <a> tags  */
