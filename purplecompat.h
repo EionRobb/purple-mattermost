@@ -145,7 +145,7 @@
 //define PurpleHttpConnection  PurpleUtilFetchUrlData
 #define purple_buddy_set_name  purple_blist_rename_buddy
 #if	!PURPLE_VERSION_CHECK(2, 12, 0)
-#	define PURPLE_MESSAGE_REMOTE_SEND  0x10000
+#define PURPLE_MESSAGE_REMOTE_SEND  0x10000
 #endif
 
 #define g_timeout_add_seconds  purple_timeout_add_seconds
