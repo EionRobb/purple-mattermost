@@ -175,7 +175,6 @@ typedef struct {
 	GHashTable *ids_to_usernames; // user id -> username
 	GHashTable *teams;            // A list of known team_id's -> team names
 	GHashTable *teams_display_names; // an descriptive names too.
-	GHashTable *channel_teams;    // A list of channel_id -> team_id to know what team a channel is in
 	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
 	
 	GList *user_prefs;            // all user preferences read from server
