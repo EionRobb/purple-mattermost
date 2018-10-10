@@ -178,7 +178,6 @@ typedef struct {
 	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
 	
 	GList *user_prefs;            // all user preferences read from server
-	GList *joined_channels;       // all channels for which we performed mm_join_room and have not left;
 	GList *mention_words;         // terms set up in MM account settings which trigger notifications.
 	GList *commands;              // available slash commands
 
