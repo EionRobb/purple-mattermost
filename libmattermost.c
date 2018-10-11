@@ -1145,7 +1145,7 @@ mm_get_teams(MattermostAccount *ma)
 {
 	gchar *url;
 
-	mm_start_socket(ma);
+	//mm_start_socket(ma);
 
 	url = mm_build_url(ma,"/users/me/teams"); 
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_got_teams, NULL);
@@ -1470,7 +1470,6 @@ mm_get_me(MattermostAccount *ma)
 {
 	gchar *url;
 	url = mm_build_url(ma,"/users/me");
-
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_me_response, NULL);
 	g_free(url);
 }
@@ -2685,6 +2684,9 @@ mm_login(PurpleAccount *account)
 
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
+	// need to be started early or offline->online transition will fail
+	mm_start_socket(ma);
+
 	//TODO check for two-factor-auth
 	{
 		JsonObject *data = json_object_new();
@@ -2692,7 +2694,6 @@ mm_login(PurpleAccount *account)
 		
 		if (purple_account_get_bool(ma->account, "use-mmauthtoken", FALSE)) {
 			ma->session_token = g_strdup(purple_connection_get_password(pc));
-
 			mm_get_me(ma);
 
 		} else {
@@ -3502,6 +3503,27 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	g_free(url);
 }
 
+MattermostChannel *
+mm_get_channel_from_blist_alias(MattermostAccount *ma, const gchar *alias) 
+{
+	PurpleBlistNode *bnode;
+	for (bnode = purple_blist_get_root(); bnode != NULL; bnode = purple_blist_node_next(bnode, FALSE)) {
+		if (PURPLE_IS_CHAT(bnode) && purple_chat_get_account(PURPLE_CHAT(bnode)) == ma->account) {
+			if (purple_strequal(alias,purple_chat_get_alias(PURPLE_CHAT(bnode)))) {
+				GHashTable *chatdata = purple_chat_get_components(PURPLE_CHAT(bnode));
+				MattermostChannel *mc = g_new0(MattermostChannel,1);
+				mc->id = g_strdup(g_hash_table_lookup(chatdata, "id"));
+				mc->team_id = g_strdup(g_hash_table_lookup(chatdata, "team_id"));
+				mc->name = g_strdup(g_hash_table_lookup(chatdata, "name"));
+				mc->type = g_strdup(g_hash_table_lookup(chatdata, "type"));
+				mc->display_name = g_strdup(g_hash_table_lookup(chatdata, "display_name"));
+				mc->creator_id = g_strdup(g_hash_table_lookup(chatdata, "creator_id"));
+				return mc;
+			}
+		}
+	}
+	return NULL;
+} 
 static void
 mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 {
@@ -3514,6 +3536,21 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	mc->type = g_strdup(g_hash_table_lookup(chatdata, "type"));
 	mc->display_name = g_strdup(g_hash_table_lookup(chatdata, "display_name"));
 	mc->creator_id = g_strdup(g_hash_table_lookup(chatdata, "creator_id"));
+
+	// After going 'offline' then back 'online' chatdata is lost 
+	// except id .. which contains .. chat alias ??
+	// we do not check team_id - can be NULL for group chats.
+
+	if (mc->name == NULL || mc->type == NULL) { 
+		MattermostChannel *mctmp = mm_get_channel_from_blist_alias(ma, mc->id);
+		if (mctmp) {
+			mm_g_free_mattermost_channel(mc);
+			mc = mctmp;
+		} else {
+			mm_g_free_mattermost_channel(mc);
+			return; // no data ... no chat.
+		}
+	}
 
 	PurpleChatConversation *chatconv = purple_conversations_find_chat(ma->pc, g_str_hash(mc->id));
 
@@ -3532,6 +3569,7 @@ mm_join_chat(PurpleConnection *pc, GHashTable *chatdata)
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "display_name", g_strdup(mc->display_name));
 	purple_conversation_set_data(PURPLE_CONVERSATION(chatconv), "creator_id", g_strdup(mc->creator_id));
 	purple_conversation_present(PURPLE_CONVERSATION(chatconv));
+
 
   mm_get_channel_by_id(ma,mc->id);
 	mm_g_free_mattermost_channel(mc);
