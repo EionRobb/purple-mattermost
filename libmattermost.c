@@ -487,7 +487,7 @@ static gint64
 mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 {
 //	GList *prefs;
-	gint64 now = (g_get_real_time() / 1000) -(60*60*24*5*1000); //(- 5 days for debug, remove !)
+	gint64 now = (g_get_real_time() / 1000);  //-(60*60*24*5*1000); //(- 5 days for debug, remove !)
 //	gint64 then = 0;
 //	if (!id) return now;
 
@@ -3497,6 +3497,7 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 
 	since = g_ascii_strtoll(tmptime, NULL, 10);
 	}
+
 
 	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_got_history_of_room, channel);
