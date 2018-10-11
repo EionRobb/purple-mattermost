@@ -70,6 +70,7 @@
 #define purple_conversations_find_chat(pc, id)  PURPLE_CONV_CHAT(purple_find_chat(pc, id))
 #define purple_serv_got_chat_in                    serv_got_chat_in
 #define purple_serv_got_chat_left                  serv_got_chat_left
+#define purple_chat_get_alias(chat)           ((chat)->alias)
 #define purple_chat_conversation_add_user     purple_conv_chat_add_user
 #define purple_chat_conversation_add_users    purple_conv_chat_add_users
 #define purple_chat_conversation_get_users    purple_conv_chat_get_users

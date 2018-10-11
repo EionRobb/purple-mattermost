@@ -41,7 +41,6 @@
 
 #define MATTERMOST_CHANNEL_SEPARATOR_VISUAL " / "
 #define MATTERMOST_CHANNEL_PRIVATE_VISUAL  "[P] "
-#define MATTERMOST_CHANNEL_SEPARATOR "---"
 #define MATTERMOST_CHANNEL_OPEN 'O'
 #define MATTERMOST_CHANNEL_PRIVATE 'P'
 #define MATTERMOST_CHANNEL_DIRECT 'D'
@@ -168,7 +167,6 @@ typedef struct {
 	GHashTable *group_chats;      // A store of known multi-user room_id's -> room name's
 	GHashTable *aliases;          // A store of known display names -> room id's
 	GHashTable *group_chats_rev;  // A store of known multi-user room name's -> room_id's
-	GHashTable *group_chats_creators; // chat_id -> creator_id
 	GHashTable *sent_message_ids; // A store of message id's that we generated from this instance
 	GHashTable *result_callbacks; // Result ID -> Callback function
 	GHashTable *usernames_to_ids; // username -> user id
