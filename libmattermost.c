@@ -515,6 +515,7 @@ mm_set_new_purple_chat(MattermostAccount *ma, MattermostChannel *mc)
 	g_hash_table_insert(defaults, "type", g_strdup(mc->type));
 	g_hash_table_insert(defaults, "creator_id", g_strdup(mc->creator_id));
 
+
 	const gchar *alias = mm_get_chat_alias(ma, mc);
 
 	PurpleChat *chat = purple_chat_new(ma->account, alias, defaults);
@@ -787,6 +788,8 @@ mm_about_myself(PurpleProtocolAction *action)
 	g_free(tmp);
 }
 
+static void mm_build_groups_from_blist(MattermostAccount *ma);
+
 static void
 mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -808,6 +811,10 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		mm_get_commands_for_team(ma, team_id);		
 		mm_get_open_channels_for_team(ma, team_id);
 	}
+
+	//Build the initial hash tables from the current buddy list
+	mm_build_groups_from_blist(ma);
+
 	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
 
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
@@ -2677,9 +2684,6 @@ mm_login(PurpleAccount *account)
 	ma->api_endpoint = g_strdup(MATTERMOST_API_EP);
 
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
-
-	//Build the initial hash tables from the current buddy list
-	mm_build_groups_from_blist(ma);
 
 	//TODO check for two-factor-auth
 	{
