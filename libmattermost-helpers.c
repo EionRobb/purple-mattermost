@@ -93,6 +93,7 @@ mm_g_free_mattermost_channel(gpointer a)
 	g_free(c->header);
 	g_free(c->purpose);
 	g_free(c->creator_id);
+	g_free(c);
 }
 
 void
