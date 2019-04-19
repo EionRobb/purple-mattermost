@@ -56,6 +56,7 @@ Please see install guides for setting up Pidgin-Mattermost
 - [Mattermost Server Install Guide](INSTALL.md#server-install) 
 - [Windows Client Install Guide](INSTALL.md#windows-client-install) 
 - [Linux Client Install Guide](INSTALL.md#linux-client-install-guide)
+- [MacOS X Client Install Guide](INSTALL.md#macos-x-client-install-guide)
 
 This plugin includes it own installer for setting up on Windows: 
 
