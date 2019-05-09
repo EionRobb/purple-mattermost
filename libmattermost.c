@@ -4052,12 +4052,6 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 			return -1;
 		}
 
-		if (purple_strequal(who, ma->self->username)) {
-			purple_notify_error(ma->pc, _("Error"), _("You cannot send instant message to yourself"), "", purple_request_cpar_from_connection(ma->pc));
-			//TODO: 'disable' im conv window ? 
-			return -1;
-		}
-
 		JsonArray *data;
 		gchar *url, *postdata;
 		const gchar *user_id = g_hash_table_lookup(ma->usernames_to_ids, who);
