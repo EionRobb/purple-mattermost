@@ -87,23 +87,6 @@ mm_update_cookies(MattermostAccount *ma, const GList *cookie_headers)
 	}
 }
 
-static void
-mm_cookie_foreach_cb(gchar *cookie_name, gchar *cookie_value, GString *str)
-{
-	g_string_append_printf(str, "%s=%s;", cookie_name, cookie_value);
-}
-
-static gchar *
-mm_cookies_to_string(MattermostAccount *ma)
-{
-	GString *str;
-
-	str = g_string_new(NULL);
-
-	g_hash_table_foreach(ma->cookie_table, (GHFunc)mm_cookie_foreach_cb, str);
-
-	return g_string_free(str, FALSE);
-}
 
 static void
 mm_response_callback(PurpleHttpConnection *http_conn, 
@@ -241,7 +224,6 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 {
 	PurpleAccount *account;
 	MattermostProxyConnection *conn;
-	gchar *cookies;
 	PurpleHttpConnection *http_conn;
 	
 	account = ma->account;
@@ -252,15 +234,12 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	conn->callback = callback;
 	conn->user_data = user_data;
 	
-	cookies = mm_cookies_to_string(ma);
-	
 	purple_debug_info("mattermost", "Fetching url %s\n", url);
 
 
 	PurpleHttpRequest *request = purple_http_request_new(url);
 	purple_http_request_header_set(request, "Accept", "*/*");
 	purple_http_request_header_set(request, "User-Agent", MATTERMOST_USERAGENT);
-	purple_http_request_header_set(request, "Cookie", cookies);
 	if (ma->session_token) {
 		purple_http_request_header_set_printf(request, "Authorization", "Bearer %s", ma->session_token);
 	}
@@ -293,7 +272,6 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	if (http_conn != NULL)
 		ma->http_conns = g_slist_prepend(ma->http_conns, http_conn);
 
-	g_free(cookies);
 }
 
 const gchar *
@@ -3164,10 +3142,7 @@ static void
 mm_socket_send_headers(MattermostAccount *ma)
 {
 	gchar *websocket_header;
-	gchar *cookies;
 	const gchar *websocket_key = "15XF+ptKDhYVERXoGcdHTA=="; //TODO don't be lazy
-
-	cookies = mm_cookies_to_string(ma);
 
 //	websocket_header = g_strdup_printf("GET %s/users/websocket HTTP/1.1\r\n"
 	websocket_header = g_strdup_printf("GET %s/websocket HTTP/1.0\r\n"
@@ -3179,16 +3154,14 @@ mm_socket_send_headers(MattermostAccount *ma)
 							"Sec-WebSocket-Version: 13\r\n"
 							"Sec-WebSocket-Key: %s\r\n"
 							"User-Agent: " MATTERMOST_USERAGENT "\r\n"
-							"Cookie: %s\r\n"
 							"Authorization: Bearer %s\r\n"
 							//"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"
 							"\r\n", ma->api_endpoint, ma->server,
-							websocket_key, cookies, ma->session_token);
+							websocket_key, ma->session_token);
 
 	mm_socket_write(ma, websocket_header, strlen(websocket_header));
 
 	g_free(websocket_header);
-	g_free(cookies);
 }
 
 static void
@@ -4049,12 +4022,6 @@ const gchar *who, const gchar *message, PurpleMessageFlags flags)
 		if (purple_str_has_suffix(who, MATTERMOST_BOT_LABEL)) {
 			purple_notify_error(ma->pc, _("Error"), _("You cannot send instant message to a BOT"), _("(However you may be able to interact with it using \"/cmd command\" in a chat)"), purple_request_cpar_from_connection(ma->pc));
 			//TODO: 'disable' im conv window ?
-			return -1;
-		}
-
-		if (purple_strequal(who, ma->self->username)) {
-			purple_notify_error(ma->pc, _("Error"), _("You cannot send instant message to yourself"), "", purple_request_cpar_from_connection(ma->pc));
-			//TODO: 'disable' im conv window ? 
 			return -1;
 		}
 
