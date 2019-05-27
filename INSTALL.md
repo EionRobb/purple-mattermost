@@ -85,7 +85,7 @@ GitLab cookie (MMAUTHTOKEN) authentication workaround:
 
 - Login to your mattermost server with your browser.
 - Obtain the value of MMAUTHTOKEN cookie for your mattermost server. 
-  (in Firefox: Preferences -> Privacy -> Remove individual cookies -> your mattermost server -> MMAUTHTOKEN -> Content)
+  (on your Mattermost web page: right-click -> Inspect Element, under "Storage" open cookies and copy MMAUTHTOKEN content. It should look like "ewmxxxuxatndbjergsssizngry" )
 - Copy it to **Password:** field.
 - In **Advanced** account setup tab check **Password is Gitlab cookie**.
 
