@@ -1858,9 +1858,9 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		msg_flags |= PURPLE_MESSAGE_SYSTEM;
 	}
 
-	if (!mm_have_seen_message_id(ma, id) || json_object_get_int_member(post, "edit_at")) {
+	if ((!mm_have_seen_message_id(ma, id) && !json_object_get_int_member(post, "edit_at")) || (json_object_get_int_member(post, "edit_at") >= update_at)) {
 		// Dont display duplicate messages (eg where the server inspects urls to give icons/header/content)
-		//  but do display edited messages
+		//  but do display edited messages (unless they are updates such as emoji reactions)
 
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
