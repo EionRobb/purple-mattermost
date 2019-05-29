@@ -101,6 +101,7 @@ mm_g_free_mattermost_channel_link(gpointer a)
 	MattermostChannelLink *l = a;
 	g_free(l->channel_id);
 	g_free(l->file_id);
+	g_free(l->post_id);
 	g_free(l->sender);
 	g_free(l);
 }

@@ -1709,13 +1709,17 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 
 	//TODO: that file can have thumbnail, display it ? ...
 	if (!mmfile->uri || !ma->client_config->public_link) {
-		anchor = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name,"]",NULL);
+		//TODO: get proper team name here, maybe based on channel, if available
+		const gchar *team_name = g_hash_table_lookup(ma->teams, mm_get_first_team_id(ma));
+		gchar *url = g_strconcat((purple_account_get_bool(ma->account, "use-ssl", TRUE)?"https://":"http://"), ma->server,"/", team_name, "/pl/", mmfile->mmchlink->post_id, NULL);
+		anchor = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name,", visit ","<a href=\"", url, "\">", url, "</a> to access the file]" , NULL);
+		g_free(url);
 	} else {
 		if (!anchor) anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL);
 	}
 
 	mm_purple_message_file_send(ma, mmfile, anchor, FALSE);
-	
+
 	mm_g_free_mattermost_file(mmfile);
 	g_free(anchor);
 }
@@ -1738,13 +1742,14 @@ mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data
 }
 
 static void
-mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, const gchar *channel_id, const gchar *username, gint64 timestamp)
+mm_fetch_file_link_for_channel(MattermostAccount *ma, const gchar *file_id, const gchar *channel_id, const gchar *post_id, const gchar *username, gint64 timestamp)
 {
 	MattermostChannelLink *info = g_new0(MattermostChannelLink, 1);
 	gchar *url;
 
 	info->channel_id = g_strdup(channel_id);
 	info->file_id = g_strdup(file_id);
+	info->post_id = g_strdup(post_id);
 	info->sender = g_strdup(username);
 	info->timestamp = timestamp;
 
@@ -1884,11 +1889,14 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 			if (json_object_has_member(post, "file_ids")) {
 				JsonArray *file_ids = json_object_get_array_member(post, "file_ids");
 				guint i, len = json_array_get_length(file_ids);
-				
+			
+				// pass post_id so that permalink to the post can be displayed in case of error
+				const gchar *post_id = json_object_get_string_member(post, "id");
+
 				for (i = 0; i < len; i++) {
 					const gchar *file_id = json_array_get_string_element(file_ids, i);
 					
-					mm_fetch_file_link_for_channel(ma, file_id, channel_id, use_username, timestamp);
+					mm_fetch_file_link_for_channel(ma, file_id, channel_id, post_id, use_username, timestamp);
 				}
 			}
 

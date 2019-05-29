@@ -263,18 +263,19 @@ typedef struct {
 typedef struct {
 	gchar *channel_id;
 	gchar *file_id;
+	gchar *post_id;
 	gchar *sender;
 	gint64 timestamp;
 } MattermostChannelLink;
 
 typedef struct {
-		gchar *id;
+	gchar *id;
 //	gchar *user_id;
 //	gchar *post_id;
 	gchar *name;
 //	gchar *extension;
 //	gint64 size;
-		gchar *mime_type;
+	gchar *mime_type;
 //	gint width;
 //	gint height;
 	gboolean has_preview_image;
