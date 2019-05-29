@@ -3467,7 +3467,7 @@ mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 	g_free(url);
 }
 
-static const gint64
+static gint64
 mm_get_channel_approximate_view_time(MattermostAccount *ma, MattermostChannel *channel)
 {
 	const gchar *tmptime = NULL;
