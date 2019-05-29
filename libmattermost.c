@@ -3475,6 +3475,28 @@ mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 	g_free(url);
 }
 
+static gint64
+mm_get_channel_approximate_view_time(MattermostAccount *ma, MattermostChannel *channel)
+{
+	const gchar *tmptime = NULL;
+
+	PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
+	if (chat) {
+		tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
+	} else {
+		PurpleBuddy *buddy = purple_blist_find_buddy(ma->account,g_hash_table_lookup(ma->one_to_ones,channel->id));
+		if (buddy) {
+			tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"channel_approximate_view_time");
+		}
+	}
+
+	if(!tmptime) {
+		tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000)); // now.
+	}
+
+	return g_ascii_strtoll(tmptime, NULL, 10);
+}
+
 static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
 
 static void
@@ -3492,6 +3514,18 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 	JsonArray *order = json_object_get_array_member(obj, "order");
 
 	gint i, len = json_array_get_length(order);
+
+	// do not show updates (such as reactions). only edits, new posts and deletes
+	for (i = len - 1; i >= 0; i--) {
+		const gchar *post_id = json_array_get_string_element(order, i);
+		JsonObject *post = json_object_get_object_member(posts, post_id);
+
+		const gint64 since = mm_get_channel_approximate_view_time(ma, channel);
+		if (json_object_get_int_member(post, "create_at") < since && json_object_get_int_member(post, "edit_at") < since && json_object_get_int_member(post, "delete_at") < since) {
+			json_array_remove_element(order, i);
+		}
+	}
+	len = json_array_get_length(order);
 
 	if (len > 0) {
 		if (!g_hash_table_lookup(ma->one_to_ones,channel->id)) { // not one to one 
@@ -3551,27 +3585,11 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 {
 	gchar *url;
 
-	if (channel->page_history == MATTERMOST_MAX_PAGES) return; 
+	if (channel->page_history == MATTERMOST_MAX_PAGES) return;
+	if (!channel->id) return;
 
 	if (since < 0) {
-		const gchar *tmptime = NULL;
-
-		PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
-		if (chat) {
-			tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
-		} else {
-			if (!channel->id) { /* printf ("NO CHANNEL ID\n");*/ return; }
-			PurpleBuddy *buddy = purple_blist_find_buddy(ma->account,g_hash_table_lookup(ma->one_to_ones,channel->id));
-			if (buddy) {
-				tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"channel_approximate_view_time");
-			}
-		}
-
-	if(!tmptime) {
-		tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000)); // now.
-	}
-
-	since = g_ascii_strtoll(tmptime, NULL, 10);
+		since = mm_get_channel_approximate_view_time(ma, channel);
 	}
 
 	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
