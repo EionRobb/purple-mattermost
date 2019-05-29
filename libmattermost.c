@@ -1858,9 +1858,9 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		msg_flags |= PURPLE_MESSAGE_SYSTEM;
 	}
 
-	if ((!mm_have_seen_message_id(ma, id) && !json_object_get_int_member(post, "edit_at")) || (json_object_get_int_member(post, "edit_at") >= update_at)) {
+	if (!mm_have_seen_message_id(ma, id) || json_object_get_int_member(post, "edit_at")) {
 		// Dont display duplicate messages (eg where the server inspects urls to give icons/header/content)
-		//  but do display edited messages (unless they are updates such as emoji reactions)
+		//  but do display edited messages
 
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
@@ -2133,7 +2133,11 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 			const gchar *channel_id = json_object_get_string_member(post, "channel_id");
 			const gchar *user_id =  mm_data_or_broadcast_string("user_id");
 			const gchar *team_id = json_object_get_string_member(post, "team_id");
-			
+
+			// detect posts with reactions (update time is larger than edit) and ignore them
+			if (purple_strequal(event, "post_edited") && json_object_get_int_member(post, "update_at") > json_object_get_int_member(post, "edit_at")) {
+				// do nothing
+			} else
 			//type system_join_channel, channel_id is ""		
 			if (!purple_strequal(channel_id,"") && purple_strequal(ma->self->user_id, user_id)) {
 				mm_get_channel_by_id(ma, team_id, channel_id);
@@ -2155,7 +2159,7 @@ mm_process_msg(MattermostAccount *ma, JsonNode *element_node)
 							tmpchannel->team_id = g_strdup(team_id);
 							tmpchannel->display_name = g_strdup(display_name);
 							tmpchannel->type = g_strdup(type);
-							
+
 							alias = mm_get_chat_alias(ma,tmpchannel);
 
 							PurpleChatConversation *conv = purple_serv_got_joined_chat(ma->pc, g_str_hash(channel_id), alias);
