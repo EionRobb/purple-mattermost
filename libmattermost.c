@@ -4874,19 +4874,27 @@ static void mm_send_file_xfer(PurpleXfer *xfer)
 
 	gpointer *buffer = g_try_malloc(xfer->size);
 
-	//FIXME?: Can xfer->fd be 0 here ? (guess not)
-
 	if (buffer == NULL) {
 		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot allocate memory."), purple_request_cpar_from_connection(ma->pc));
 		purple_xfer_cancel_local(xfer);
 		return;
 	}
 
-	if (!read(xfer->fd,buffer,xfer->size)) {
+	// xfer->fd is set to -1, open our own fd
+	FILE *f = fopen(xfer->local_filename, "rb");
+	if (!f) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot open file."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+
+	if (fread(buffer, 1, xfer->size, f) != xfer->size) {
+		fclose(f);
 		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot read file."), purple_request_cpar_from_connection(ma->pc));
 		purple_xfer_cancel_local(xfer);
 		return;
 	}
+	fclose(f);
 
 	xfer->bytes_sent = xfer->size;
 	xfer->bytes_remaining = 0;
