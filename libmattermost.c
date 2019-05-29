@@ -1709,8 +1709,18 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 
 	//TODO: that file can have thumbnail, display it ? ...
 	if (!mmfile->uri || !ma->client_config->public_link) {
-		//TODO: get proper team name here, maybe based on channel, if available
-		const gchar *team_name = g_hash_table_lookup(ma->teams, mm_get_first_team_id(ma));
+		// get team_id for this channel, if possible
+		const gchar *team_id = NULL;
+		if (mmfile->mmchlink->channel_id) {
+			team_id = g_hash_table_lookup(ma->channel_teams, mmfile->mmchlink->channel_id);
+		}
+
+		// if there is no channel id or the lookup failed, use first team_id
+		if (!team_id) {
+			team_id = mm_get_first_team_id(ma);
+		}
+
+		const gchar *team_name = g_hash_table_lookup(ma->teams, team_id);
 		gchar *url = g_strconcat((purple_account_get_bool(ma->account, "use-ssl", TRUE)?"https://":"http://"), ma->server,"/", team_name, "/pl/", mmfile->mmchlink->post_id, NULL);
 		anchor = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name,", visit ","<a href=\"", url, "\">", url, "</a> to access the file]" , NULL);
 		g_free(url);
