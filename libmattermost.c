@@ -1721,9 +1721,15 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 		}
 
 		const gchar *team_name = g_hash_table_lookup(ma->teams, team_id);
-		gchar *url = g_strconcat((purple_account_get_bool(ma->account, "use-ssl", TRUE)?"https://":"http://"), ma->server,"/", team_name, "/pl/", mmfile->mmchlink->post_id, NULL);
-		anchor = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name,", visit ","<a href=\"", url, "\">", url, "</a> to access the file]" , NULL);
-		g_free(url);
+		gchar *link_error_str = g_strconcat("[error: public links disabled on server, cannot get file: ",mmfile->name, NULL);
+		if (team_name) {
+			gchar *url = g_strconcat((purple_account_get_bool(ma->account, "use-ssl", TRUE)?"https://":"http://"), ma->server,"/", team_name, "/pl/", mmfile->mmchlink->post_id, NULL);
+			anchor = g_strconcat(link_error_str, ", visit ","<a href=\"", url, "\">", url, "</a> to access the file]" , NULL);
+			g_free(url);
+		} else {
+			anchor = g_strconcat(link_error_str, "]", NULL);
+		}
+		g_free(link_error_str);
 	} else {
 		if (!anchor) anchor = g_strconcat("<a href=\"", mmfile->uri, "\">", mmfile->name, "</a>", NULL);
 	}
