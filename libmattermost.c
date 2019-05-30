@@ -3478,15 +3478,15 @@ mm_get_users_of_room(MattermostAccount *ma, MattermostChannel *channel)
 static gint64
 mm_get_channel_approximate_view_time(MattermostAccount *ma, MattermostChannel *channel)
 {
-	const gchar *tmptime = NULL;
+	gchar *tmptime = NULL;
 
 	PurpleChat *chat = mm_purple_blist_find_chat(ma, channel->id);
 	if (chat) {
-		tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time");
+		tmptime = g_strdup(purple_blist_node_get_string(PURPLE_BLIST_NODE(chat),"channel_approximate_view_time"));
 	} else {
 		PurpleBuddy *buddy = purple_blist_find_buddy(ma->account,g_hash_table_lookup(ma->one_to_ones,channel->id));
 		if (buddy) {
-			tmptime = purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"channel_approximate_view_time");
+			tmptime = g_strdup(purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy),"channel_approximate_view_time"));
 		}
 	}
 
@@ -3494,7 +3494,9 @@ mm_get_channel_approximate_view_time(MattermostAccount *ma, MattermostChannel *c
 		tmptime = g_strdup_printf("%" G_GINT64_FORMAT, (g_get_real_time() / 1000)); // now.
 	}
 
-	return g_ascii_strtoll(tmptime, NULL, 10);
+	gint64 viewtime = g_ascii_strtoll(tmptime, NULL, 10);
+	g_free(tmptime);
+	return viewtime;
 }
 
 static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
