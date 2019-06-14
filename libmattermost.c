@@ -2572,8 +2572,6 @@ mm_roomlist_get_list(PurpleConnection *pc)
 		MatterMostTeamRoomlist *mmtrl;
 		const gchar *team_id = i->data;
 
-		ma->roomlist_team_count++;
-
 		// Get a list of public channels the user has *not* yet joined
 		mmtrl = g_new0(MatterMostTeamRoomlist, 1);
 		mmtrl->team_id = g_strdup(team_id);
