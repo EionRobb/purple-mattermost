@@ -240,6 +240,7 @@ mm_fetch_url(MattermostAccount *ma, const gchar *url, const guint optype, const 
 	PurpleHttpRequest *request = purple_http_request_new(url);
 	purple_http_request_header_set(request, "Accept", "*/*");
 	purple_http_request_header_set(request, "User-Agent", MATTERMOST_USERAGENT);
+        purple_http_request_header_set(request, "X-Requested-With", "XMLHttpRequest");
 	if (ma->session_token) {
 		purple_http_request_header_set_printf(request, "Authorization", "Bearer %s", ma->session_token);
 	}
@@ -3184,6 +3185,7 @@ mm_socket_send_headers(MattermostAccount *ma)
 							"Sec-WebSocket-Version: 13\r\n"
 							"Sec-WebSocket-Key: %s\r\n"
 							"User-Agent: " MATTERMOST_USERAGENT "\r\n"
+                                                        "X-Requested-With: XMLHttpRequest\r\n"
 							"Authorization: Bearer %s\r\n"
 							//"Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n"
 							"\r\n", ma->api_endpoint, ma->server,
