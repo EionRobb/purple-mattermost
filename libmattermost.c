@@ -1717,7 +1717,7 @@ mm_file_metadata_response(MattermostAccount *ma, JsonNode *node, gpointer user_d
 		}
 
 		// if there is no channel id or the lookup failed, use first team_id
-		if (!team_id) {
+		if (!team_id || strlen(team_id) == 0) {
 			team_id = mm_get_first_team_id(ma);
 		}
 
