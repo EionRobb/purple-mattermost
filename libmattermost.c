@@ -2719,6 +2719,7 @@ mm_login(PurpleAccount *account)
 	MattermostAccount *ma;
 	PurpleConnection *pc = purple_account_get_connection(account);
 	gchar **userparts;
+	gchar **serverparts;
 	const gchar *username = purple_account_get_username(account);
 	gchar *url;
 	PurpleConnectionFlags pc_flags;
@@ -2780,12 +2781,23 @@ mm_login(PurpleAccount *account)
 		return;
 	}
 
+        serverparts = g_strsplit(userparts[1], "/", 2);
+        if( serverparts[0] == NULL ) {
+		purple_connection_error(pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, "No server supplied (use username|server)");
+		return;
+        }
+
 	purple_connection_set_display_name(pc, userparts[0]);
 	ma->username = g_strdup(userparts[0]);
-	ma->server = g_strdup(userparts[1]);
+	ma->server = g_strdup(serverparts[0]);
 	g_strfreev(userparts);
-
-	ma->api_endpoint = g_strdup(MATTERMOST_API_EP);
+        if( serverparts[1] == NULL ) {
+	        ma->api_endpoint = g_strdup(MATTERMOST_API_EP);
+        }
+        else {
+	        ma->api_endpoint = g_strconcat("/", serverparts[1], MATTERMOST_API_EP, NULL);
+        }
+	g_strfreev(serverparts);
 
 	purple_connection_set_state(pc, PURPLE_CONNECTION_CONNECTING);
 
