@@ -1833,6 +1833,11 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 
 	gchar *attachments = NULL;
 
+	// Strip '@' from username 
+	if (username && username[0] == '@') {
+		username++;
+	}
+	
 	if (purple_strequal(type, "slack_attachment")) {
 		JsonArray *attchs = json_object_get_array_member(props, "attachments");
 		guint i, len = json_array_get_length(attchs);
