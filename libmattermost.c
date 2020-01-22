@@ -482,6 +482,11 @@ mm_find_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 	return now;
 }
 
+gboolean
+mm_idle_updater_timeout(gpointer data);
+
+void
+mm_set_status(PurpleAccount *account, PurpleStatus *status);
 
 static void
 mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -666,6 +671,17 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 
 	mm_get_users_by_ids(ma,mm_users);
 
+        // Is this the last team we are waiting to receive channels
+        // for?  If so mark the connection as connected.
+        ma->groupchat_team_count --;
+        if (ma->groupchat_team_count == 0) {
+          purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
+
+          mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
+          ma->idle_timeout = g_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
+        }
+
+
 }
 
 static void
@@ -814,6 +830,9 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonArray *teams = json_node_get_array(node);
 	guint i, len = json_array_get_length(teams);
 
+        // Set the counter so we know how many teams to wait for
+        // before marking the connection as connected.
+        ma->groupchat_team_count = len;
 	for (i = 0; i < len; i++) {
 		JsonObject *team = json_array_get_object_element(teams, i);
 
@@ -824,13 +843,9 @@ mm_got_teams(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		g_hash_table_replace(ma->teams, g_strdup(team_id), g_strdup(name));
 		g_hash_table_replace(ma->teams_display_names, g_strdup(team_id), g_strdup(display_name));
 
-		mm_get_commands_for_team(ma, team_id);		
-		mm_get_open_channels_for_team(ma, team_id);
+		mm_get_commands_for_team(ma, team_id);
+                mm_get_open_channels_for_team(ma, team_id);
 	}
-	purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
-
-	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
-	ma->idle_timeout = g_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
 }
 
 
