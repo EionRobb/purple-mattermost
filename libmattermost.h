@@ -162,6 +162,8 @@ typedef struct {
 	
 	gint seq; //incrementing counter
 	gint roomlist_team_count;
+        gint groupchat_team_count; // ejs: I wasn't sure if we could safely
+                                   // reuse roomlist_team_count here
 	
 	GHashTable *one_to_ones;      // A store of known room_id's -> username's
 	GHashTable *one_to_ones_rev;  // A store of known usernames's -> room_id's
