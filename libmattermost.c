@@ -2745,6 +2745,9 @@ mm_login(PurpleAccount *account)
 	PurpleConnectionFlags pc_flags;
 	const gchar *split_string = (char[2]) {MATTERMOST_SERVER_SPLIT_CHAR, '\0'};
 
+	if (!pc)
+		return;
+
 	pc_flags = purple_connection_get_flags(pc);
 	pc_flags |= PURPLE_CONNECTION_FLAG_HTML;
 	pc_flags |= PURPLE_CONNECTION_FLAG_NO_FONTSIZE;
