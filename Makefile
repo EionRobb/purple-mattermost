@@ -115,9 +115,9 @@ install-icons: mattermost16.png mattermost22.png mattermost48.png
 	mkdir -p $(MATTERMOST_ICONS_DEST)/16
 	mkdir -p $(MATTERMOST_ICONS_DEST)/22
 	mkdir -p $(MATTERMOST_ICONS_DEST)/48
-	install mattermost16.png $(MATTERMOST_ICONS_DEST)/16/mattermost.png
-	install mattermost22.png $(MATTERMOST_ICONS_DEST)/22/mattermost.png
-	install mattermost48.png $(MATTERMOST_ICONS_DEST)/48/mattermost.png
+	install -m644 mattermost16.png $(MATTERMOST_ICONS_DEST)/16/mattermost.png
+	install -m644 mattermost22.png $(MATTERMOST_ICONS_DEST)/22/mattermost.png
+	install -m644 mattermost48.png $(MATTERMOST_ICONS_DEST)/48/mattermost.png
 
 installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22.png mattermost48.png
 	$(MAKENSIS) purple-mattermost.nsi
