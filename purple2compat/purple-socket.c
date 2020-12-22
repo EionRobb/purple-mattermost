@@ -317,7 +317,7 @@ purple_socket_watch(PurpleSocket *ps, PurpleInputCondition cond,
 	PurpleInputFunction func, gpointer user_data)
 {
 	g_return_if_fail(ps != NULL);
-
+	purple_debug_misc("mattermost", "debugging watch");
 	if (!purple_socket_check_state(ps, PURPLE_SOCKET_STATE_CONNECTED))
 		return;
 
