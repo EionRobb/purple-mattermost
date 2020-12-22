@@ -297,9 +297,8 @@ mm_make_topic(const gchar *header, const gchar *purpose, const gchar *old_topic)
 }
 
 static void
-mm_send_email_cb(PurpleBuddy *buddy)
+mm_send_email_menu_cb(PurpleBlistNode *bnode)
 {
-	PurpleBlistNode *bnode = PURPLE_BLIST_NODE(buddy);
 	const gchar *email = purple_blist_node_get_string(bnode, "email");
 	const gchar *first_name = purple_blist_node_get_string(bnode, "first_name");
 	const gchar *last_name = purple_blist_node_get_string(bnode, "last_name");
@@ -315,28 +314,65 @@ mm_send_email_cb(PurpleBuddy *buddy)
 	g_string_append_printf(full_email, "<%s>", email);
 	
 	gchar *uri = g_string_free(full_email, FALSE);
-	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(buddy)), uri);
+	purple_notify_uri(purple_account_get_connection(purple_buddy_get_account(PURPLE_BUDDY(bnode))), uri);
 	g_free(uri);
 }
 
-static GList *
-mm_buddy_menu(PurpleBuddy *buddy)
+static void mm_send_file(PurpleConnection *gc, const char *who, const char *file);
+
+
+static void 
+mm_send_file_menu_cb(PurpleBlistNode *bnode)
 {
-	GList *menu = NULL;
-	if (purple_blist_node_get_string(PURPLE_BLIST_NODE(buddy), "email")) {
-		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"), PURPLE_CALLBACK(mm_send_email_cb), NULL, NULL);
-		menu = g_list_append(menu, action);
+//THE PROBLEM
+// For some reason we get here with bnode pointing to nowhere !
+// (libpurple 2.10) while called from chat conversation window.
+
+//THE WORKAROUND: find active conversation with focus and 'discover'
+//where from we were called...yes. hackish...
+ 
+	GList *convs = purple_get_conversations();
+	GList *aconv = NULL;
+	PurpleConnection *pc = NULL;
+
+	for (aconv = convs; aconv != NULL; aconv = g_list_next(aconv)) {
+		PurpleConversation *thisconv = aconv->data;
+		pc = purple_conversation_get_connection(thisconv);
+
+		if (purple_conversation_has_focus(thisconv)) {
+			const gchar *who = purple_conversation_get_data(thisconv,"id");
+			mm_send_file(pc, who, NULL);
+			return;
+		}
 	}
-	return menu;
+
+//The WORKAROUND part 2:
+//purple_conversation_has_focus() may be NOT implememented in
+// (G)UIs (it is in pidgin), propose something ...
+
+	if (pc) 
+		purple_notify_error(pc, _("Error"),
+				_("Cannot initialize Send File"),
+				_("Use '/sendfile' command in conversation window instead."),
+				purple_request_cpar_from_connection(pc));
 }
 
+
 static GList *
-mm_blist_node_menu(PurpleBlistNode *node)
+mm_blist_node_menu(PurpleBlistNode *bnode)
 {
-	if(PURPLE_BUDDY(node)) {
-		return mm_buddy_menu((PurpleBuddy *) node);
-	}
-	return NULL;
+	GList *menu = NULL;
+
+	if(PURPLE_IS_BUDDY(bnode)) {
+		PurpleMenuAction *action = purple_menu_action_new(_("Email Buddy"), PURPLE_CALLBACK(mm_send_email_menu_cb), NULL, NULL);
+		menu = g_list_append(menu, action);
+	} else if (PURPLE_IS_CHAT(bnode)) {
+		PurpleMenuAction *action = purple_menu_action_new(_("Send File"), PURPLE_CALLBACK(mm_send_file_menu_cb), NULL, NULL);
+		menu = g_list_append(menu, action);
+		//FIXME: bnode is not NULL here but ... points to nowhere ?
+	} 
+	
+	return menu;
 }
 
 static const gchar *
@@ -749,6 +785,14 @@ mm_about_server(PurpleProtocolAction *action)
 		purple_notify_user_info_add_pair_plaintext(user_info,_("Public file links"),_("disabled"));
 	}
 
+	if(ma->client_config->enable_file_attachments) {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("File attachments"),_("enabled"));
+	} else {
+		purple_notify_user_info_add_pair_plaintext(user_info,_("File attachments"),_("disabled"));
+	}
+
+	purple_notify_user_info_add_pair_plaintext(user_info,_("Max file size"), g_strdup_printf("%" G_GINT64_FORMAT, ma->client_config->max_file_size));
+
 	purple_notify_user_info_add_section_break(user_info);
 
 	purple_notify_user_info_add_pair_plaintext(user_info,_("Build number"), ma->client_config->build_number);
@@ -769,6 +813,10 @@ mm_about_commands(PurpleProtocolAction *action)
 	PurpleNotifyUserInfo *user_info = purple_notify_user_info_new();
 	GList *i = NULL;
 	MattermostCommand *cmd = NULL;
+	
+	purple_notify_user_info_add_pair_plaintext(user_info,"leave","/leave | Leave the channel");
+	purple_notify_user_info_add_pair_plaintext(user_info,"sendfile","/sendfile | Send File to channel");
+
 	for(i=ma->commands;i;i=i->next) {
 		cmd = i->data;
 		const gchar *info = g_strconcat("/",cmd->trigger," ",
@@ -1399,18 +1447,26 @@ mm_get_client_config_response(MattermostAccount *ma, JsonNode *node, gpointer us
 
 	JsonObject *response = json_node_get_object(node);
 
-	if (json_object_get_string_member(response,"EnablePublicLink"), "true") {
+	if (purple_strequal(json_object_get_string_member(response,"EnablePublicLink"), "true")) {
 		ma->client_config->public_link = TRUE; 
 	} else {
 		ma->client_config->public_link = FALSE;
 	}
 
-	if (json_object_get_string_member(response,"EnableCommands"), "true") {
+	if (purple_strequal(json_object_get_string_member(response,"EnableCommands"), "true")) {
 		ma->client_config->enable_commands = TRUE;
 	} else {
 		ma->client_config->enable_commands = FALSE;
 	}
 
+	if (purple_strequal(json_object_get_string_member(response,"EnableFileAttachments"), "true")) {
+		ma->client_config->enable_file_attachments = TRUE;
+	} else {
+		ma->client_config->enable_file_attachments = FALSE;
+	}
+
+	ma->client_config->max_file_size = g_ascii_strtoll(json_object_get_string_member(response,"MaxFileSize"),NULL,10);
+	if (ma->client_config->max_file_size == 0) ma->client_config->max_file_size = MATTERMOST_MAX_FILE_SIZE;
 	ma->client_config->site_name = g_strdup(json_object_get_string_member(response,"SiteName"));
 	ma->client_config->support_email = g_strdup(json_object_get_string_member(response,"SupportEmail"));
 	ma->client_config->server_version = g_strdup(json_object_get_string_member(response,"Version"));
@@ -2774,6 +2830,7 @@ mm_login(PurpleAccount *account)
 	ma->client_config = g_new0(MattermostClientConfig,1);
 	ma->client_config->public_link = FALSE;
 	ma->client_config->enable_commands = FALSE;
+	ma->client_config->enable_file_attachments = FALSE;
 
 	ma->one_to_ones = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->one_to_ones_rev = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
@@ -3886,11 +3943,11 @@ static gint
 mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const gchar *channel_id, const gchar *message, GList *file_ids);
 
 static void
-mm_coversation_send_image_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+mm_conversation_send_file_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	const gchar *channel_id = user_data;
 
-	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error uploading image file"),TRUE)) return;
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error uploading file"),TRUE)) return;
 
 	JsonObject *response = json_node_get_object(node);
 	JsonArray *file_infos = json_object_get_array_member(response,"file_infos");
@@ -3898,25 +3955,30 @@ mm_coversation_send_image_response(MattermostAccount *ma, JsonNode *node, gpoint
 	for (i=0; i < len ; i++) {
 		JsonObject *file_info = json_node_get_object(json_array_get_element(file_infos, i));
 		const gchar *file_id = json_object_get_string_member(file_info,"id");
-
+		
 		GList *file_ids = NULL;
 		file_ids = g_list_append(file_ids,g_strdup(file_id));
-		mm_conversation_send_message(ma, NULL, channel_id, "", file_ids);
+    const gchar *name = purple_url_decode(json_object_get_string_member(file_info,"name"));
+
+		//we send an empty message here with just file_ids
+
+ 		mm_conversation_send_message(ma, NULL, channel_id, "", file_ids);
+
+    if (g_hash_table_lookup(ma->group_chats, channel_id)) {
+      purple_serv_got_chat_in(ma->pc, g_str_hash(channel_id), "[purple-mattermost]" , PURPLE_MESSAGE_SYSTEM|PURPLE_MESSAGE_RECV, g_strconcat("file sent (",name,")",NULL), time(NULL));
+    } 
 	}
 }
 static void
-mm_conversation_send_image(MattermostAccount *ma,const gchar *channel_id, PurpleImage *image)
+mm_conversation_send_file(MattermostAccount *ma,const gchar *channel_id, const gchar *filename, gpointer buffer, gint64 len)
 {
-	gchar *url, *postdata;
-	const gchar *filename = purple_image_get_path(image);
-
-	postdata = g_memdup(purple_image_get_data(image),purple_image_get_size(image));
-
-	url = mm_build_url(ma,"/files?channel_id=%s&filename=%s",channel_id,filename);
-	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, purple_image_get_size(image), mm_coversation_send_image_response, g_strdup(channel_id));
+	gchar *url;
+	//URL filename - encode !!
+	url = mm_build_url(ma,"/files?channel_id=%s&filename=%s",channel_id,purple_url_encode(filename));
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, buffer, len, mm_conversation_send_file_response, g_strdup(channel_id));
 
 	g_free(url);
-	g_free(postdata);
+	g_free(buffer);
 }
 
 //FIXME: merge two funcs below.
@@ -3950,7 +4012,12 @@ mm_conversation_send_files(MattermostAccount *ma, const gchar *team_id, const gc
 		int imgid = mm_conversation_find_imageid(msgpt);
 
 		PurpleImage *image = purple_image_store_get(imgid);
-		if (image) {mm_conversation_send_image(ma, channel_id, image);}
+		if (image) {
+			const gchar *filename = purple_image_get_path(image);
+			gint64 len = purple_image_get_size(image);
+			gchar *buffer = g_memdup(purple_image_get_data(image),len);
+			mm_conversation_send_file(ma, channel_id, filename, buffer, len);
+		}
 
 		msgpt = g_strstr_len(msgpt, strlen(msgpt), ">");
 		if (msgpt != NULL) { msgpt = msgpt + 1; }
@@ -4001,7 +4068,6 @@ mm_conversation_send_message(MattermostAccount *ma, const gchar *team_id, const 
 
 	postdata = json_object_to_string(data);
 
-	//url = mm_build_url(ma,"/teams/%s/channels/%s/posts/create", team_id, channel_id);
 	url = mm_build_url(ma,"/posts");
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_conversation_send_message_response, NULL); //todo look at callback
 
@@ -4667,6 +4733,33 @@ mm_cmd_leave(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **e
 	return PURPLE_CMD_RET_OK;
 }
 
+
+static PurpleCmdRet
+mm_cmd_sendfile(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar **error, gpointer data)
+{
+	const gchar *who;
+
+	PurpleConnection *pc = purple_conversation_get_connection(conv);
+
+	if (pc == NULL) {
+		return PURPLE_CMD_RET_FAILED;
+	}
+	
+	if (PURPLE_IS_IM_CONVERSATION(conv)) {
+		who = purple_conversation_get_name(conv);
+	} else {
+		who = purple_conversation_get_data(conv, "id");
+	}
+
+	if (who) {
+		mm_send_file(pc, who, NULL);
+		return PURPLE_CMD_RET_OK;
+	}
+
+	return PURPLE_CMD_RET_FAILED;
+}
+
+
 static void
 mm_slash_command_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
@@ -4711,9 +4804,11 @@ mm_slash_command(PurpleConversation *conv, const gchar *cmd, gchar **args, gchar
 		return PURPLE_CMD_RET_FAILED;
 	}
 
+	// FIXME: We get 'you do not have the appropriate permissions' from server here ..?
+
 	if (PURPLE_IS_IM_CONVERSATION(conv)) {
 		purple_notify_error(pc, _("Error"), _("Not implemented."), 
-														_("Slash commands not implemented (yet) for private channels."), purple_request_cpar_from_connection(pc));
+														_("Slash commands not implemented (yet) for direct channels."), purple_request_cpar_from_connection(pc));
 		return PURPLE_CMD_RET_FAILED;
 	}
 
@@ -4785,6 +4880,10 @@ plugin_load(PurplePlugin *plugin, GError **error)
 						MATTERMOST_PLUGIN_ID, mm_cmd_leave,
 						_("leave:  Leave the channel"), NULL);
 
+	 purple_cmd_register("sendfile", "", PURPLE_CMD_P_PLUGIN, PURPLE_CMD_FLAG_CHAT | PURPLE_CMD_FLAG_IM |
+						PURPLE_CMD_FLAG_PROTOCOL_ONLY | PURPLE_CMD_FLAG_ALLOW_WRONG_ARGS,
+						MATTERMOST_PLUGIN_ID, mm_cmd_sendfile,
+						_("sendfile:  Upload a file to the channel"), NULL);
 	return TRUE;
 
 }
@@ -4796,6 +4895,86 @@ plugin_unload(PurplePlugin *plugin, GError **error)
 
 	return TRUE;
 }
+
+static void mm_send_file_xfer(PurpleXfer *xfer)
+{
+	const gchar *channel_id = NULL;
+
+	PurpleAccount *pa = purple_xfer_get_account(xfer);
+	PurpleConnection *pc = purple_account_get_connection(pa);
+	MattermostAccount *ma = purple_connection_get_protocol_data(pc);
+
+	if (!ma->client_config->enable_file_attachments) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Server does not allow file attachments."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+
+	xfer->filename = g_path_get_basename(xfer->local_filename);
+
+	channel_id=g_hash_table_lookup(ma->one_to_ones_rev,xfer->who);
+
+	if (channel_id == NULL) channel_id= xfer->who; // this comes from group channel
+
+	if (xfer->size > ma->client_config->max_file_size) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Selected file size is bigger than max file size."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+
+	gpointer *buffer = g_try_malloc(xfer->size);
+
+	if (buffer == NULL) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot allocate memory."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+
+	// xfer->fd is set to -1, open our own fd
+	FILE *f = fopen(xfer->local_filename, "rb");
+	if (!f) {
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot open file."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+
+	if (fread(buffer, 1, xfer->size, f) != xfer->size) {
+		fclose(f);
+		purple_notify_error(ma->pc, _("Error"), _("Error sending file"), _("Cannot read file."), purple_request_cpar_from_connection(ma->pc));
+		purple_xfer_cancel_local(xfer);
+		return;
+	}
+	fclose(f);
+
+	xfer->bytes_sent = xfer->size;
+	xfer->bytes_remaining = 0;
+	xfer->start_time = time(NULL);
+	xfer->end_time = xfer->start_time;
+
+	mm_conversation_send_file(ma,channel_id,xfer->filename,buffer,xfer->size);
+
+	purple_xfer_set_completed(xfer, TRUE);
+	purple_xfer_end(xfer);
+	//g_free(buffer); in mm_conversation_send_file
+}
+
+static void
+mm_send_file(PurpleConnection *pc, const char *who, const char *file) 
+{
+	if (who == NULL) {
+		purple_notify_error(pc, _("Error"), _("Error sending file"), _("Undefined channel."), purple_request_cpar_from_connection(pc));
+	return;
+	}
+
+	PurpleXfer *xfer = purple_xfer_new(purple_connection_get_account(pc), PURPLE_XFER_SEND, who);
+
+	if (xfer) {
+		purple_xfer_set_init_fnc(xfer, mm_send_file_xfer);
+		purple_xfer_request(xfer);
+	} 
+}
+
+
 
 // Purple2 Plugin Load Functions
 #if !PURPLE_VERSION_CHECK(3, 0, 0)
@@ -4821,6 +5000,7 @@ libpurple2_plugin_unload(PurplePlugin *plugin)
 
 	return plugin_unload(plugin, NULL);
 }
+
 
 static void
 plugin_init(PurplePlugin *plugin)
@@ -4886,6 +5066,8 @@ plugin_init(PurplePlugin *plugin)
 
 	prpl_info->roomlist_get_list = mm_roomlist_get_list;
 	prpl_info->roomlist_room_serialize = mm_roomlist_serialize;
+
+	prpl_info->send_file = mm_send_file;
 }
 
 

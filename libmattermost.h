@@ -36,6 +36,7 @@
 #define MATTERMOST_HISTORY_PAGE_SIZE 60 // 200 is MAX in paged queries (60 is default)
 #define MATTERMOST_MAX_PAGES 10 // that is 2000 users or posts in paged queries
 
+#define MATTERMOST_MAX_FILE_SIZE 52428800 // default MM max limit for attachments
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
 
@@ -116,6 +117,7 @@ typedef struct {
 typedef struct {
 	gboolean public_link;
 	gboolean enable_commands;
+	gboolean enable_file_attachments;
 	gchar *site_name;
 	gchar *site_url;
 	gchar *support_email;
@@ -125,6 +127,7 @@ typedef struct {
 	gchar *build_hash;
 	gchar *build_date;
 	gchar *enterprise_ready;
+	gint64 max_file_size;
 } MattermostClientConfig;
 
 typedef struct {
