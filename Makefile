@@ -4,6 +4,8 @@ PIDGIN3_TREE_TOP ?= ../pidgin-main
 LIBPURPLE_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
 
+include $(PIDGIN_TREE_TOP)/libpurple/win32/global.mak
+
 WIN32_CC ?= /usr/bin/i686-w64-mingw32-gcc
 
 PROTOC_C ?= protoc-c
