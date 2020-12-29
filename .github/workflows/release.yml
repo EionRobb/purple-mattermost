@@ -25,7 +25,6 @@ jobs:
           rm -rf win32-dev.7z
       - name: Create Build
         run: |
-          sudo make install
           sudo make installer
       - name: Create Release
         id: create_release
