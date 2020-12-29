@@ -16,7 +16,7 @@ SetCompress off
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
 !ifndef JSON_GLIB_DLL
-!define JSON_GLIB_DLL "libjson-glib-1.0.dll"
+!define JSON_GLIB_DLL "win32-dev/json-glib-0.14/lib/libjson-glib-1.0.dll"
 !endif
 !ifndef PIDGIN_VARIANT
 !define PIDGIN_VARIANT "Pidgin"

@@ -1,10 +1,10 @@
 
-PIDGIN_TREE_TOP ?= ../pidgin-2.10.11
+PIDGIN_TREE_TOP ?= /home/ubuntu18/Desktop/pidgin/pidgin-2.x.y/pidgin/plugins/purple-mattermost/../../..
 PIDGIN3_TREE_TOP ?= ../pidgin-main
 LIBPURPLE_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
 
-WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
+WIN32_CC ?= /usr/bin/i686-w64-mingw32-gcc
 
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config

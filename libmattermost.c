@@ -1586,7 +1586,6 @@ static void
 mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 {
 	JsonObject *response;
-	PurpleConnection *pc = user_data;
 
 	if (node == NULL) {
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("Bad username/password"));
