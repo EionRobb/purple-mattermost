@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Download dependencies
         run: | # TODO: win32.dev.7z should be kept somewhere else 
-          sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full
+          sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
           hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
           wget https://eion.robbmob.com/win32-dev.7z 
       - name: Setup pidgin dependencies
