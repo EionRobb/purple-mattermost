@@ -22,6 +22,7 @@ jobs:
         run: |
           cd pidgin-2.x.y && hg checkout release-2.x.y
           cd .. && 7z x win32-dev.7z -owin32-dev
+          cp local.mak ./pidgin-2.x.y
           cd pidgin-2.x.y && make -f Makefile.mingw install 
           cd .. && rm -rf win32-dev.7z
       - name: Create Build
