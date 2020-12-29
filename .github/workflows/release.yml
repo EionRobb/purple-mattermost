@@ -20,7 +20,7 @@ jobs:
           wget https://eion.robbmob.com/win32-dev.7z 
       - name: Setup pidgin dependencies
         run: |
-          cd pidgin-2.x.y && git checkout release-2.x.y
+          cd pidgin-2.x.y && hg checkout release-2.x.y
           7z x win32-dev.7z -owin32-dev
           rm -rf win32-dev.7z
       - name: Create Build
