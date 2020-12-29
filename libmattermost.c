@@ -1607,15 +1607,6 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	}
 	
 	if (json_object_get_int_member(response, "status_code") >= 400) {
-		mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
-
-		g_source_remove(ma->idle_timeout);
-		purple_debug_misc("mattermost","login error");
-		while (ma->http_conns) {
-			purple_http_conn_cancel(ma->http_conns->data);
-			ma->http_conns = g_slist_delete_link(ma->http_conns, ma->http_conns);
-		}
-
 		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, json_object_get_string_member(response, "message"));
 		return;
 	}
@@ -2729,7 +2720,7 @@ mm_set_status(PurpleAccount *account, PurpleStatus *status)
 	data = json_object_new();
 	json_object_set_string_member(data, "status", setstatus);
 	if(ma->self == NULL){
-		purple_debug_error("mattermost","ma->self is NULL");
+		purple_debug_error("mattermost","Mattermost Account is NULL");
 		return;
 	}
 	json_object_set_string_member(data, "user_id", ma->self->user_id);
@@ -2935,8 +2926,12 @@ mm_close(PurpleConnection *pc)
 
 	mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
 
-	g_source_remove(ma->idle_timeout);
-	g_source_remove(ma->read_messages_timeout);
+	if(ma->idle_timeout > 0){
+		g_source_remove(ma->idle_timeout);
+	}
+	if(ma->read_messages_timeout > 0){
+		g_source_remove(ma->read_messages_timeout);
+	}
 
 	purple_proxy_connect_cancel_with_handle(pc);
 	if (ma->websocket != NULL) purple_ssl_close(ma->websocket);
