@@ -13,19 +13,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      # - name: Download dependencies
-      #   run: | # TODO: win32.dev.7z should be kept somewhere else 
-      #     sudo apt-get install mingw-w64 mercurial p7zip-full
-      #     hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
-      #     wget https://eion.robbmob.com/win32-dev.7z 
-      # - name: Setup pidgin dependencies
-      #   run: |
-      #     cd pidgin-2.x.y && hg checkout release-2.x.y
-      #     cd .. && 7z x win32-dev.7z -owin32-dev
-      #     rm -rf win32-dev.7z
+      - name: Download dependencies
+        run: | # TODO: win32.dev.7z should be kept somewhere else 
+          sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full
+          hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
+          wget https://eion.robbmob.com/win32-dev.7z 
+      - name: Setup pidgin dependencies
+        run: |
+          cd pidgin-2.x.y && hg checkout release-2.x.y
+          cd .. && 7z x win32-dev.7z -owin32-dev
+          rm -rf win32-dev.7z
       - name: Create Build
         run: |
           sudo make install
+          sudo make installer
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
