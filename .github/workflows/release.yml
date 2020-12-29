@@ -22,10 +22,12 @@ jobs:
         run: |
           cd pidgin-2.x.y && hg checkout release-2.x.y
           cd .. && 7z x win32-dev.7z -owin32-dev
-          rm -rf win32-dev.7z
+          cd pidgin-2.x.y && make -f Makefile.mingw install 
+          cd .. && rm -rf win32-dev.7z
       - name: Create Build
         run: |
           sudo make install
+          sudo make installer
       # - name: Create Release
       #   id: create_release
       #   uses: actions/create-release@v1
