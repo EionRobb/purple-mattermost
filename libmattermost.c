@@ -638,7 +638,6 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			purple_blist_add_chat(chat, mm_get_or_create_default_group(), NULL);
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin", FALSE /*autojoin*/);
 			purple_blist_node_set_bool(PURPLE_BLIST_NODE(chat), "gtk-persistent", TRUE);
-			// purple_blist_node_set_string(PURPLE_BLIST_NODE(chat), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,(channel->channel_approximate_view_time)));
 
 			purple_chat_set_alias(chat, alias);
 			g_hash_table_replace(ma->group_chats, g_strdup(channel->id), g_strdup(channel->name));
@@ -665,7 +664,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
 			purple_conversation_present(PURPLE_CONVERSATION(conv));
 		}
 		// already called from mm_join_chat
-		// if (!purple_blist_node_get_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin")) mm_get_channel_by_id(ma, channel->team_id, channel->id);
+		if (!purple_blist_node_get_bool(PURPLE_BLIST_NODE(chat), "gtk-autojoin")) mm_get_channel_by_id(ma, channel->team_id, channel->id);
 	}
 
 	mm_get_users_by_ids(ma,mm_users);
@@ -676,7 +675,7 @@ mm_add_channels_to_blist(MattermostAccount *ma, JsonNode *node, gpointer user_da
         if (ma->groupchat_team_count == 0) {
           purple_connection_set_state(ma->pc, PURPLE_CONNECTION_CONNECTED);
           mm_set_status(ma->account, purple_presence_get_active_status(purple_account_get_presence(ma->account)));
-          ma->idle_timeout = g_timeout_add_seconds(15, mm_idle_updater_timeout, ma->pc);
+          ma->idle_timeout = g_timeout_add_seconds(270, mm_idle_updater_timeout, ma->pc);
         }
 
 
@@ -1146,7 +1145,6 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		mm_set_user_blist(ma, mm_user, buddy);
 
 		purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "user_id", mm_user->user_id);
-		// purple_blist_node_set_string(PURPLE_BLIST_NODE(buddy), "channel_approximate_view_time", g_strdup_printf("%" G_GINT64_FORMAT,(mm_user->channel_approximate_view_time)));
 
 		//this is called for new buddies or on startup: set a flag to read history from server
 		purple_blist_node_set_bool(PURPLE_BLIST_NODE(buddy), "seen", FALSE);
@@ -1882,7 +1880,6 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 	if (username && username[0] == '@') {
 		username++;
 	}
-	purple_debug_misc("mattermost","processing message");
 	
 	if (purple_strequal(type, "slack_attachment")) {
 		JsonArray *attchs = json_object_get_array_member(props, "attachments");
@@ -2113,7 +2110,6 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 	json_object_set_object_member(obj, "data", data);
 
 	json_object_set_int_member(obj, "seq", mm_get_next_seq_callback(ma, mm_got_hello_user_statuses, NULL));
-	purple_debug_misc("mattermost","refreshing");
 	mm_socket_write_json(ma, obj);
 }
 
@@ -2899,7 +2895,7 @@ mm_login(PurpleAccount *account)
 			postdata = json_object_to_string(data);
 			
 			url = mm_build_url(ma,"/users/login");
-			mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_login_response, pc);
+			mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_login_response, NULL);
 			
 			g_free(postdata);
 			g_free(url);
@@ -3709,7 +3705,7 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	if (since < 0) {
 		since = mm_get_channel_approximate_view_time(ma, channel);
 	}
-	// since=g_get_real_time() / 1000;
+
 	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_got_history_of_room, channel);
 	g_free(url);
@@ -4378,7 +4374,6 @@ mm_search_users_text(MattermostAccount *ma, const gchar *text)
 	
 	json_object_set_string_member(obj, "term", text);
 	json_object_set_boolean_member(obj, "allow_inactive", TRUE);
-	// json_object_set_boolean_member(obj, "without_team", TRUE);
 
 	postdata = json_object_to_string(obj);
 
