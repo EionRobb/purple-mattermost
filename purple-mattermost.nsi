@@ -9,7 +9,7 @@ SetCompress off
 !define PRODUCT_NAME "Pidgin-Mattermost"
 !endif
 !ifndef PRODUCT_VERSION
-!define PRODUCT_VERSION "v1.1"
+!define PRODUCT_VERSION ${PRODUCT_VERSION}
 !endif
 !define PRODUCT_PUBLISHER "Eion Robb"
 !define PRODUCT_WEB_SITE "https://github.com/EionRobb/purple-mattermost"

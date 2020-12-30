@@ -1,8 +1,7 @@
 on:
   push:
-    # Sequence of patterns matched against refs/tags
     tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+      - 'v*'
 
 name: Build and Create Release
 
@@ -13,11 +12,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+
       - name: Download dependencies
         run: | # TODO: win32.dev.7z should be kept somewhere else 
           sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
           hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
           wget https://eion.robbmob.com/win32-dev.7z 
+
+      - name: Prepare release metadata
+        id: prepare_release_metadata
+        run: |
+          echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+
       - name: Setup pidgin dependencies
         run: |
           cd pidgin-2.x.y && hg checkout release-2.x.y
@@ -25,21 +31,39 @@ jobs:
           cp local.mak ./pidgin-2.x.y
           cd pidgin-2.x.y && make -f Makefile.mingw install 
           cd .. && rm -rf win32-dev.7z
+
       - name: Create Build
         run: |
           sudo make install
-          sudo make installer
-      # - name: Create Release
-      #   id: create_release
-      #   uses: actions/create-release@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
-      #   with:
-      #     tag_name: ${{ github.ref }}
-      #     release_name: Release ${{ github.ref }}
-      #     body: |
-      #       Changes in this Release
-      #       - First Change
-      #       - Second Change
-      #     draft: true
-      #     prerelease: false
+          sudo make installer VERSION=${{ steps.build.outputs.VERSION }}
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: true
+          prerelease: false
+      
+      - name: Upload Release Asset For Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: Pidgin-Mattermost-${{ steps.build.outputs.VERSION }}.exe
+          asset_name: Pidgin-Mattermost-${{ steps.build.outputs.VERSION }}.exe
+          asset_content_type: application/gzip
+
+      - name: Upload Release Asset For Linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: libmattermost.so
+          asset_name: libmattermost.so
+          asset_content_type: application/gzip

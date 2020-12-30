@@ -17,9 +17,9 @@ RPMSPEC = purple-mattermost.spec
 
 COMMIT_ID = $(shell git log -1 --pretty=format:"%h")
 ifneq ($(COMMIT_ID),)
-PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
+PLUGIN_VERSION ?= $(VERSION).$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
 else
-PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d)
+PLUGIN_VERSION ?= $(VERSION).$(shell date +%Y.%m.%d)
 endif
 
 CFLAGS	?= -O2 -g -pipe -Wall -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
@@ -122,7 +122,7 @@ install-icons: mattermost16.png mattermost22.png mattermost48.png
 	install -m644 mattermost48.png $(MATTERMOST_ICONS_DEST)/48/mattermost.png
 
 installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22.png mattermost48.png
-	$(MAKENSIS) purple-mattermost.nsi
+	$(MAKENSIS) -DPRODUCT_VERSION=$(VERSION) purple-mattermost.nsi
 
 	
 rpm: clean 

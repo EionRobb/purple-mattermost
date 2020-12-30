@@ -27,7 +27,6 @@
 *.so
 *.so.*
 *.dylib
-!libssp-0.dll
 
 # Executables
 *.exe
