@@ -2079,15 +2079,33 @@ mm_got_hello_user_statuses(MattermostAccount *ma, JsonNode *node, gpointer user_
 	g_list_free(ids);
 }
 
+static void
+mm_got_user_statuses_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
+{
+
+	if (!mm_check_mattermost_response(ma,node,_("Error"),_("Error getting user statuses"),TRUE)) return;
+
+	JsonArray *users = json_node_get_array(node);
+	guint i, len = json_array_get_length(users);
+
+	for (i = 0; i < len; i++) {
+		JsonObject *user = json_array_get_object_element(users,i);
+		const gchar *user_id = json_object_get_string_member(user, "user_id");
+		const gchar *status = json_object_get_string_member(user, "status");
+		const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+		
+		if (username != NULL && status != NULL) {
+			purple_protocol_got_user_status(ma->account, username, status, NULL);
+		}
+	}
+}
+
 static void 
 mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 {
-	JsonObject *obj;
-	JsonObject *data;
 	JsonArray *user_ids;
-
-	obj = json_object_new();
-	data = json_object_new();
+	gchar *url;
+	gchar *postdata;
 	user_ids = json_array_new();
 
 	if (id != NULL) {		
@@ -2105,12 +2123,14 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 		}
 		g_slist_free(buddy_it);
 	}
-	json_object_set_array_member(data, "user_ids", user_ids);
-	json_object_set_string_member(obj, "action", "get_statuses_by_ids");
-	json_object_set_object_member(obj, "data", data);
+	guint len = json_array_get_length(user_ids);
+	if(len == 0){
+		return;
+	}
+	postdata = json_array_to_string(user_ids);
 
-	json_object_set_int_member(obj, "seq", mm_get_next_seq_callback(ma, mm_got_hello_user_statuses, NULL));
-	mm_socket_write_json(ma, obj);
+	url = mm_build_url(ma,"/users/status/ids");
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_POST, postdata, -1, mm_got_user_statuses_response, NULL);
 }
 
 
