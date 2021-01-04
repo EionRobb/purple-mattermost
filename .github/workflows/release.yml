@@ -13,7 +13,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Download dependencies
+      - name: Cache Packages
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            /usr/bin
+            pidgin-2.x.y
+            win32-dev.7z
+          key: ${{ runner.os }}-cache
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
         run: | # TODO: win32.dev.7z should be kept somewhere else 
           sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
           hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
@@ -28,7 +39,7 @@ jobs:
         run: |
           cd pidgin-2.x.y && hg checkout release-2.x.y
           cd .. && 7z x win32-dev.7z -owin32-dev
-          cp local.mak ./pidgin-2.x.y
+          cp .github/local.mak ./pidgin-2.x.y
           cd pidgin-2.x.y && make -f Makefile.mingw install 
           cd .. && rm -rf win32-dev.7z
 

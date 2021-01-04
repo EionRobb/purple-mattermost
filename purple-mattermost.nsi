@@ -9,14 +9,14 @@ SetCompress off
 !define PRODUCT_NAME "Pidgin-Mattermost"
 !endif
 !ifndef PRODUCT_VERSION
-!define PRODUCT_VERSION ${PRODUCT_VERSION}
+!define PRODUCT_VERSION ${PIDGIN_VERSION}
 !endif
 !define PRODUCT_PUBLISHER "Eion Robb"
 !define PRODUCT_WEB_SITE "https://github.com/EionRobb/purple-mattermost"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
 !ifndef JSON_GLIB_DLL
-!define JSON_GLIB_DLL "win32-dev/json-glib-0.14/lib/libjson-glib-1.0.dll"
+!define JSON_GLIB_DLL "${WIN32_DEV_TOP}/json-glib-0.14/lib/libjson-glib-1.0.dll"
 !endif
 !ifndef PIDGIN_VARIANT
 !define PIDGIN_VARIANT "Pidgin"
