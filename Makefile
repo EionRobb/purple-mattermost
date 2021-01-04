@@ -14,9 +14,9 @@ RPMSPEC = purple-mattermost.spec
 
 COMMIT_ID = $(shell git log -1 --pretty=format:"%h")
 ifneq ($(COMMIT_ID),)
-PLUGIN_VERSION ?= $(VERSION).$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
+PLUGIN_VERSION ?= $(shell echo $(VERSION) | sed 's/^.//').$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
 else
-PLUGIN_VERSION ?= $(VERSION).$(shell date +%Y.%m.%d)
+PLUGIN_VERSION ?= $(shell echo $(VERSION) | sed 's/^.//').$(shell date +%Y.%m.%d)
 endif
 
 CFLAGS	?= -O2 -g -pipe -Wall -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
