@@ -3,7 +3,7 @@ PIDGIN_TREE_TOP ?= pidgin-2.x.y
 PIDGIN3_TREE_TOP ?= ../pidgin-main
 LIBPURPLE_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
-VERSION ?= 1.1
+VERSION ?= v1.1
 
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
