@@ -59,7 +59,7 @@ jobs:
           draft: true
           prerelease: false
       
-      - name: Upload Release Asset For Windows
+      - name: Upload Installer For Windows
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,6 +67,16 @@ jobs:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
           asset_name: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
+          asset_content_type: application/gzip
+
+      - name: Upload Release Asset For Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: libmattermost.dll
+          asset_name: libmattermost.dll
           asset_content_type: application/gzip
 
       - name: Upload Release Asset For Linux
