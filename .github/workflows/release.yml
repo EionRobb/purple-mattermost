@@ -18,8 +18,8 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            pidgin-2.x.y
-            win32-dev.7z
+            **/pidgin-2.x.y
+            **/win32-dev.7z
           key: ${{ runner.os }}-cache
 
       - name: Install System dependencies
