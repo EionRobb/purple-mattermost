@@ -18,18 +18,17 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            ./pidgin-2.x.y
-            ./win32-dev.7z
+            **/win32-dev.7z
           key: ${{ runner.os }}-build-cache
 
-      - name: Install System dependencies
-        run: |
-          sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
+      # - name: Install System dependencies
+      #   run: |
+      #     sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
+      #     hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
 
-      - name: Download Pidgin and Build dependencies
+      - name: Download Build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
           wget https://eion.robbmob.com/win32-dev.7z 
 
       # - name: Prepare release metadata
