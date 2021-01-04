@@ -18,74 +18,75 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            **/win32-dev.7z
-          key: ${{ runner.os }}-build-cache
+            ./pidgin-2.x.y
+            ./win32-dev.7z
+          key: ${{ runner.os }}-cache
 
-      # - name: Install System dependencies
-      #   run: |
-      #     sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
-      #     hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
+      - name: Install System dependencies
+        run: |
+          sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
 
-      - name: Download Build dependencies
+      - name: Download Pidgin and Build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
+          hg clone https://keep.imfreedom.org/pidgin/pidgin/ pidgin-2.x.y
           wget https://eion.robbmob.com/win32-dev.7z 
 
-      # - name: Prepare release metadata
-      #   id: prepare_release_metadata
-      #   run: |
-      #     echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+      - name: Prepare release metadata
+        id: prepare_release_metadata
+        run: |
+          echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
-      # - name: Setup pidgin dependencies
-      #   run: |
-      #     cd pidgin-2.x.y && hg checkout release-2.x.y
-      #     cd .. && 7z x win32-dev.7z -owin32-dev
-      #     cp .github/local.mak ./pidgin-2.x.y
-      #     cd pidgin-2.x.y && make -f Makefile.mingw install 
-      #     cd .. && rm -rf win32-dev.7z
+      - name: Setup pidgin dependencies
+        run: |
+          cd pidgin-2.x.y && hg checkout release-2.x.y
+          cd .. && 7z x win32-dev.7z -owin32-dev
+          cp .github/local.mak ./pidgin-2.x.y
+          cd pidgin-2.x.y && make -f Makefile.mingw install 
+          cd .. && rm -rf win32-dev.7z
 
-      # - name: Create Build
-      #   run: |
-      #     sudo make install
-      #     sudo make installer VERSION=${{ steps.prepare_release_metadata.outputs.VERSION }}
+      - name: Create Build
+        run: |
+          sudo make install
+          sudo make installer VERSION=${{ steps.prepare_release_metadata.outputs.VERSION }}
 
-      # - name: Create Release
-      #   id: create_release
-      #   uses: actions/create-release@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
-      #   with:
-      #     tag_name: ${{ github.ref }}
-      #     release_name: Release ${{ github.ref }}
-      #     draft: true
-      #     prerelease: false
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: true
+          prerelease: false
       
-      # - name: Upload Installer For Windows
-      #   uses: actions/upload-release-asset@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-      #     asset_path: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
-      #     asset_name: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
-      #     asset_content_type: application/gzip
+      - name: Upload Installer For Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
+          asset_name: Pidgin-Mattermost-${{ steps.prepare_release_metadata.outputs.VERSION }}.exe
+          asset_content_type: application/gzip
 
-      # - name: Upload Release Asset For Windows
-      #   uses: actions/upload-release-asset@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-      #     asset_path: libmattermost.dll
-      #     asset_name: libmattermost.dll
-      #     asset_content_type: application/gzip
+      - name: Upload Release Asset For Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: libmattermost.dll
+          asset_name: libmattermost.dll
+          asset_content_type: application/gzip
 
-      # - name: Upload Release Asset For Linux
-      #   uses: actions/upload-release-asset@v1
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   with:
-      #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-      #     asset_path: libmattermost.so
-      #     asset_name: libmattermost.so
-      #     asset_content_type: application/gzip
+      - name: Upload Release Asset For Linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: libmattermost.so
+          asset_name: libmattermost.so
+          asset_content_type: application/gzip
