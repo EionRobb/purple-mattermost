@@ -18,7 +18,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: |
-            /usr/bin
+            /usr
             pidgin-2.x.y
             win32-dev.7z
           key: ${{ runner.os }}-cache
