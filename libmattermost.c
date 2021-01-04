@@ -44,21 +44,6 @@ mm_get_next_seq(MattermostAccount *ma)
 	return ma->seq++;
 }
 
-static gint
-mm_get_next_seq_callback(MattermostAccount *ma, MattermostProxyCallbackFunc callback, gpointer user_data)
-{
-	gint seq = mm_get_next_seq(ma);
-	MattermostProxyConnection *proxy = g_new0(MattermostProxyConnection, 1);
-	
-	proxy->ma = ma;
-	proxy->callback = callback;
-	proxy->user_data = user_data;
-	
-	g_hash_table_insert(ma->result_callbacks, GINT_TO_POINTER(seq), proxy);
-	
-	return seq;
-}
-
 static void
 mm_update_cookies(MattermostAccount *ma, const GList *cookie_headers)
 {
