@@ -2096,8 +2096,8 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 	if (id != NULL) {
 		json_array_add_string_element(user_ids, id);
 	} else {
-		GSList *buddy_it;
-		buddy_it = purple_find_buddies(ma->account, NULL);
+		GSList *buddies = purple_find_buddies(ma->account, NULL);
+		GSList *buddy_it = buddies;
 		while(buddy_it != NULL){
 			PurpleBuddy *buddy = buddy_it->data;
 			const gchar *buddy_name = purple_buddy_get_name(buddy);
@@ -2106,7 +2106,7 @@ mm_refresh_statuses(MattermostAccount *ma, const gchar *id)
 
 			buddy_it = g_slist_next(buddy_it);
 		}
-		g_slist_free(buddy_it);
+		g_slist_free(buddies);
 	}
 	guint len = json_array_get_length(user_ids);
 	if(len == 0){
