@@ -1,10 +1,9 @@
 
-PIDGIN_TREE_TOP ?= ../pidgin-2.10.11
+PIDGIN_TREE_TOP ?= pidgin-2.x.y
 PIDGIN3_TREE_TOP ?= ../pidgin-main
 LIBPURPLE_DIR ?= $(PIDGIN_TREE_TOP)/libpurple
 WIN32_DEV_TOP ?= $(PIDGIN_TREE_TOP)/../win32-dev
-
-WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
+VERSION ?= v1.1
 
 PROTOC_C ?= protoc-c
 PKG_CONFIG ?= pkg-config
@@ -15,9 +14,9 @@ RPMSPEC = purple-mattermost.spec
 
 COMMIT_ID = $(shell git log -1 --pretty=format:"%h")
 ifneq ($(COMMIT_ID),)
-PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
+PLUGIN_VERSION ?= $(shell echo $(VERSION) | sed 's/^.//').$(shell date +%Y.%m.%d).git.$(COMMIT_ID)
 else
-PLUGIN_VERSION ?= 1.1.$(shell date +%Y.%m.%d)
+PLUGIN_VERSION ?= $(shell echo $(VERSION) | sed 's/^.//').$(shell date +%Y.%m.%d)
 endif
 
 CFLAGS	?= -O2 -g -pipe -Wall -DMATTERMOST_PLUGIN_VERSION='"$(PLUGIN_VERSION)"'
@@ -29,8 +28,9 @@ ifeq ($(OS),Windows_NT)
   MATTERMOST_DEST = "$(PROGRAMFILES)/Pidgin/plugins"
   MATTERMOST_ICONS_DEST = "$(PROGRAMFILES)/Pidgin/pixmaps/pidgin/protocols"
   MAKENSIS = "$(PROGRAMFILES)/NSIS/makensis.exe"
+  WIN32_CC ?= $(WIN32_DEV_TOP)/mingw-4.7.2/bin/gcc
 else
-
+  WIN32_CC ?= /usr/bin/i686-w64-mingw32-gcc
   UNAME_S := $(shell uname -s)
   #.. There are special flags we need for OSX
   ifeq ($(UNAME_S), Darwin)
@@ -120,7 +120,7 @@ install-icons: mattermost16.png mattermost22.png mattermost48.png
 	install -m644 mattermost48.png $(MATTERMOST_ICONS_DEST)/48/mattermost.png
 
 installer: purple-mattermost.nsi libmattermost.dll mattermost16.png mattermost22.png mattermost48.png
-	$(MAKENSIS) purple-mattermost.nsi
+	$(MAKENSIS) -DPIDGIN_VERSION=$(VERSION) -DWIN32_DEV_TOP=$(WIN32_DEV_TOP) purple-mattermost.nsi
 
 	
 rpm: clean 
