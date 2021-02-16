@@ -65,8 +65,6 @@
 #define MATTERMOST_HTTP_POST   2
 #define MATTERMOST_HTTP_DELETE 3
 
-#define mm_hash_table_contains(hash_table, key) g_hash_table_lookup_extended(hash_table, key, NULL, NULL)
-
 #define _MM_BLIST_SET(b,u,p,s) \
 { \
 	if (s) { \
