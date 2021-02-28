@@ -1946,11 +1946,11 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 			g_free(msg_post);
 
 			if (json_object_get_int_member(post, "delete_at")) {
-				gchar *tmp = g_strconcat(_("Deleted: "), message, NULL);
+				gchar *tmp = g_strconcat(_("Deleted : "), message, NULL);
 				g_free(message);
 				message = tmp;
 			} else if (json_object_get_int_member(post, "edit_at")) {
-				gchar *tmp = g_strconcat(_("Edited: "), message, NULL);
+				gchar *tmp = g_strconcat(_("Edited : "), message, NULL);
 				g_free(message);
 				message = tmp;
 			}
