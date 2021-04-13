@@ -1799,6 +1799,12 @@ mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_file_metadata_response, mmfile);
 
 	g_free(url);
+
+	if (!mmfile->uri) {
+		url = mm_build_url(ma, "/files/%s", mmfile->mmchlink->file_id);
+		mmfile->uri = g_strdup(url);
+		g_free(url);
+	}
 }
 
 static void
