@@ -1836,9 +1836,95 @@ mm_have_seen_message_id(MattermostAccount *ma, const gchar *message_id)
 	return FALSE;
 }
 
+typedef struct {
+	gchar *message_id;
+	gchar *username;
+	gchar *message;
+} MattermostMessageCacheEntry;
+
+static void
+mm_release_message_cache_entry(gpointer data, gpointer user_data) {
+	const MattermostMessageCacheEntry *ce = data;
+
+	g_free(ce->message_id);
+	g_free(ce->username);
+	g_free(ce->message);
+}
+
+#define CACHED_MESSAGE_LENGTH 64
+#define MESSAGE_CACHE_SIZE 300
+
+static void
+mm_message_cache_add(MattermostAccount *ma, const gchar *message_id, const gchar *username, const gchar *message)
+{
+	MattermostMessageCacheEntry *msg = g_new(MattermostMessageCacheEntry, 1);
+	msg->message_id = g_strdup(message_id);
+	msg->username = g_strdup(username);
+	msg->message = g_strndup(message, CACHED_MESSAGE_LENGTH);
+	if (strlen(message) > CACHED_MESSAGE_LENGTH) {
+		strcpy(msg->message + CACHED_MESSAGE_LENGTH - 5, " ...");
+	}
+
+	gpointer message_ptr = GINT_TO_POINTER(msg);
+
+	g_queue_push_head(ma->message_cache, message_ptr);
+	msg = g_queue_pop_nth(ma->message_cache, MESSAGE_CACHE_SIZE);
+	if (!msg) return;
+
+	mm_release_message_cache_entry(msg, NULL);
+	g_free(msg);
+
+}
+
+static gint
+mm_cache_entry_compare(gconstpointer cache_entry, gconstpointer message_id) {
+	const MattermostMessageCacheEntry *ce = cache_entry;
+	const gchar *mid = message_id;
+
+	return g_strcmp0(ce->message_id, mid);
+}
+
+static MattermostMessageCacheEntry *
+mm_message_cache_find(MattermostAccount *ma,
+                      const gchar *message_id)
+{
+	GList *msgp = g_queue_find_custom(ma->message_cache, message_id, mm_cache_entry_compare);
+
+	if (!msgp) return NULL;
+
+	// todo move to the actual to the front of the queue
+
+	return msgp->data;
+
+}
+
 static void mm_mark_room_messages_read(MattermostAccount *ma, const gchar *room_id);
 
 static gchar *mm_process_attachment(JsonObject *attachment);
+
+
+
+static void
+mm_load_message_and_user(MattermostAccount *ma, JsonNode *node, gpointer user_data) {
+	JsonObject *jonode= json_node_get_object(node);
+
+	const gchar *id = json_object_get_string_member(jonode, "id");
+	const gchar *msg_text = json_object_get_string_member(jonode, "message");
+	const gchar *user_id = json_object_get_string_member(jonode, "user_id");
+	const gchar *username = g_hash_table_lookup(ma->ids_to_usernames, user_id);
+
+	mm_message_cache_add(ma, id, username, msg_text);
+}
+
+
+gchar *mm_load_root_message(MattermostAccount *ma, const gchar *root_id) {
+	gchar *url;
+	url = mm_build_url(ma, "/posts/%s", root_id);
+	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_load_message_and_user, NULL);
+	return url;
+}
+
+
 
 static gint64
 mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *data)
@@ -1932,6 +2018,8 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 		// Dont display duplicate messages (eg where the server inspects urls to give icons/header/content)
 		//  but do display edited messages
 
+		mm_message_cache_add(ma, id, username, msg_text);
+
 		// check we didn't send this ourselves
 		if (msg_flags == PURPLE_MESSAGE_RECV || !g_hash_table_remove(ma->sent_message_ids, pending_post_id)) {
 			gchar *msg_pre = mm_markdown_to_html(ma, msg_text);
@@ -1953,6 +2041,23 @@ mm_process_room_message(MattermostAccount *ma, JsonObject *post, JsonObject *dat
 				gchar *tmp = g_strconcat(_("Edited : "), message, NULL);
 				g_free(message);
 				message = tmp;
+			} else if (json_object_has_member(post, "root_id")) {
+				const gchar *root_id = json_object_get_string_member(post, "root_id");
+				if (root_id && root_id[0] != '\0') {
+
+					const MattermostMessageCacheEntry *msgentry = mm_message_cache_find(ma, root_id);
+					gchar *tmp;
+					if (msgentry) {
+						tmp = g_strconcat("Commented on ", msgentry->username, "'s message: ", msgentry->message, "\n\t", message, NULL);
+					} else {
+						gchar *url = mm_load_root_message(ma, root_id);
+						tmp = g_strconcat("Commented on message: ", url, "\n\t", message, NULL);
+						g_free(url);
+					}
+
+					g_free(message);
+					message = tmp;
+				}
 			}
 
 			if (json_object_has_member(post, "file_ids")) {
@@ -2847,6 +2952,7 @@ mm_login(PurpleAccount *account)
 	ma->teams_display_names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->channel_teams = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
 	ma->received_message_queue = g_queue_new();
+	ma->message_cache = g_queue_new();
 
 	userparts = g_strsplit(username, split_string, 2);
 
@@ -2963,6 +3069,8 @@ mm_close(PurpleConnection *pc)
 	g_hash_table_remove_all(ma->channel_teams);
 	g_hash_table_unref(ma->channel_teams);
 	g_queue_free(ma->received_message_queue);
+        g_queue_foreach(ma->message_cache, mm_release_message_cache_entry, NULL);
+	g_queue_free(ma->message_cache);
 
 	while (ma->http_conns) {
 		purple_http_conn_cancel(ma->http_conns->data);
