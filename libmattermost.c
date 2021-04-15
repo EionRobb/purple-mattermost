@@ -1892,7 +1892,11 @@ mm_message_cache_find(MattermostAccount *ma,
 
 	if (!msgp) return NULL;
 
-	// todo move to the actual to the front of the queue
+	// Move the actualy commented message to the front of the
+	// queue. We asume that commented message will probably be
+	// commented again thus we don't wanna loase such message.
+	g_queue_unlink(ma->message_cache, msgp);
+	g_queue_push_head_link(ma->message_cache, msgp);
 
 	return msgp->data;
 
