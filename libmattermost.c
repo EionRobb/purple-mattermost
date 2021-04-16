@@ -1801,9 +1801,7 @@ mm_fetch_file_metadata(MattermostAccount *ma, JsonNode *node, gpointer user_data
 	g_free(url);
 
 	if (!mmfile->uri) {
-		url = mm_build_url(ma, "/files/%s", mmfile->mmchlink->file_id);
-		mmfile->uri = g_strdup(url);
-		g_free(url);
+		mmfile->uri = mm_build_url(ma, "/files/%s", mmfile->mmchlink->file_id);
 	}
 }
 
