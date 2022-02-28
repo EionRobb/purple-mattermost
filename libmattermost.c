@@ -337,7 +337,7 @@ mm_get_first_team_id(MattermostAccount *ma)
 static void mm_get_user_prefs(MattermostAccount *ma);
 
 PurpleGroup* mm_get_or_create_default_group();
-static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
+static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel);
 
 static void mm_start_socket(MattermostAccount *ma);
 static void mm_socket_write_json(MattermostAccount *ma, JsonObject *data);
@@ -1117,9 +1117,8 @@ mm_get_users_by_ids_response(MattermostAccount *ma, JsonNode *node, gpointer use
 		} else {
 			MattermostChannel *tmpchannel = g_new0(MattermostChannel,1);
 			tmpchannel->id = g_strdup(mm_user->room_id);
-			tmpchannel->page_history = 0;
-			mm_get_history_of_room(ma, tmpchannel, -1);
-			//FIXME: GFREE THAT !
+			tmpchannel->page_history = MATTERMOST_MAX_PAGES - 1;
+			mm_get_history_of_room(ma, tmpchannel);
 		}
 
 		if (mm_user->user_id && mm_user->username) {
@@ -3578,8 +3577,8 @@ mm_got_users_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 		channel->page_users = channel->page_users + 1;
 		mm_get_users_of_room(ma, channel);
 	} else {
-		channel->page_history = 0;
-		mm_get_history_of_room(ma, channel, -1);
+		channel->page_history = MATTERMOST_MAX_PAGES - 1;
+		mm_get_history_of_room(ma, channel);
 	}
 }
 
@@ -3621,7 +3620,7 @@ mm_get_channel_approximate_view_time(MattermostAccount *ma, MattermostChannel *c
 	return viewtime;
 }
 
-static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since);
+static void mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel);
 
 static void
 mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data)
@@ -3639,12 +3638,14 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 
 	gint i, len = json_array_get_length(order);
 
+	gint64 since = mm_get_channel_approximate_view_time(ma, channel);
+	since = since - MATTERMOST_DAYS_UPTO_POSTS_FETCHED_IN_UNIX_TIME;
+
 	// do not show updates (such as reactions). only edits, new posts and deletes
+	// also, delete the posts which are before since
 	for (i = len - 1; i >= 0; i--) {
 		const gchar *post_id = json_array_get_string_element(order, i);
 		JsonObject *post = json_object_get_object_member(posts, post_id);
-
-		const gint64 since = mm_get_channel_approximate_view_time(ma, channel);
 		if (json_object_get_int_member(post, "create_at") < since && json_object_get_int_member(post, "edit_at") < since && json_object_get_int_member(post, "delete_at") < since) {
 			json_array_remove_element(order, i);
 		}
@@ -3680,18 +3681,19 @@ mm_got_history_of_room(MattermostAccount *ma, JsonNode *node, gpointer user_data
 		// for IMCONV pidgin opens the conversation by itself.
   }
 
+	// process each post received from Mattermost and show on Pidgin
+    for (i = len - 1; i >= 0; i--) {
+			const gchar *post_id = json_array_get_string_element(order, i);
+			JsonObject *post = json_object_get_object_member(posts, post_id);
+			mm_process_room_message(ma, post, NULL);
+		}
 
-	for (i = len - 1; i >= 0; i--) {
-		const gchar *post_id = json_array_get_string_element(order, i);
-		JsonObject *post = json_object_get_object_member(posts, post_id);
-		mm_process_room_message(ma, post, NULL);
-	}
+	if (channel->page_history >= 0) {
+		// decrement the channel page history everytime
+		channel->page_history = channel->page_history - 1;
 
-// 'since' does follow the page size
-if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MAX_PAGES) {
-		channel->page_history = channel->page_history + 1;
+		mm_get_history_of_room(ma, channel); 
 
-		mm_get_history_of_room(ma, channel, -1); // FIXME: that should be parametrized !
 	} else {
 		channel->page_history = MATTERMOST_MAX_PAGES;
 		// history will be stored in purple log, even if channel not read now, avoid re-reading later.
@@ -3700,22 +3702,19 @@ if (len == MATTERMOST_HISTORY_PAGE_SIZE && channel->page_history < MATTERMOST_MA
 		mm_g_free_mattermost_channel(channel);
 	}
 // for now we could just tell user...
-
 }
 
 static void
-mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64 since)
+mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel)
 {
 	gchar *url;
 
-	if (channel->page_history == MATTERMOST_MAX_PAGES) return;
+	// case for recursion to end
+	if (channel->page_history < 0) return;
 	if (!channel->id) return;
 
-	if (since < 0) {
-		since = mm_get_channel_approximate_view_time(ma, channel);
-	}
-
-	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s&since=%" G_GINT64_FORMAT "", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE), since);
+	// api call to fetch previous posts with page and per_page parameter
+	url = mm_build_url(ma,"/channels/%s/posts?page=%s&per_page=%s", channel->id, g_strdup_printf("%i",channel->page_history), g_strdup_printf("%i", MATTERMOST_HISTORY_PAGE_SIZE));
 	mm_fetch_url(ma, url, MATTERMOST_HTTP_GET, NULL, -1, mm_got_history_of_room, channel);
 	g_free(url);
 }

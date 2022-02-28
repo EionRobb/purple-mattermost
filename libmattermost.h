@@ -33,8 +33,9 @@
 
 #define MATTERMOST_BUFFER_DEFAULT_SIZE 40960
 #define MATTERMOST_USER_PAGE_SIZE 200 // 200 is MAX. in paged queries (and default)
-#define MATTERMOST_HISTORY_PAGE_SIZE 60 // 200 is MAX in paged queries (60 is default)
-#define MATTERMOST_MAX_PAGES 10 // that is 2000 users or posts in paged queries
+#define MATTERMOST_HISTORY_PAGE_SIZE 10 // 200 is MAX in paged queries (10 is default)
+#define MATTERMOST_MAX_PAGES 6 // that is 60 users or posts in paged queries
+#define MATTERMOST_DAYS_UPTO_POSTS_FETCHED_IN_UNIX_TIME 2592000000 // Unix time for 30 days in milliseconds
 
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
