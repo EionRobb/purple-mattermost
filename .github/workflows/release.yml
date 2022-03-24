@@ -15,6 +15,7 @@ jobs:
 
       - name: Install System dependencies
         run: |
+          sudo apt-get update -y
           sudo apt-get install libpurple-dev libjson-glib-dev libglib2.0-dev gettext git make libmarkdown2-dev build-essential mingw-w64 mercurial p7zip-full nsis
 
       - name: Download Pidgin and Build dependencies
