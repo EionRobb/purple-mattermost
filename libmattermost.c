@@ -2227,7 +2227,7 @@ mm_process_attachment(JsonObject *attachment)
 }
 
 static gint64
-mm_get_channel_approximate_view_time(MattermostAccount *ma, gchar *id)
+mm_get_channel_approximate_view_time(MattermostAccount *ma, const gchar *id)
 {
 	gchar *tmptime = NULL;
 
@@ -3735,7 +3735,8 @@ mm_get_history_of_room(MattermostAccount *ma, MattermostChannel *channel, gint64
 	if (!channel->id) return;
 
 	if (since < 0) {
-		since = mm_get_channel_approximate_view_time(ma, channel->id);
+		const gchar *channel_id = channel->id;
+		since = mm_get_channel_approximate_view_time(ma, channel_id);
 	}
 
 	if (since == MATTERMOST_NEW_CHANNEL_FOUND) {
