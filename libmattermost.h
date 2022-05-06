@@ -33,8 +33,10 @@
 
 #define MATTERMOST_BUFFER_DEFAULT_SIZE 40960
 #define MATTERMOST_USER_PAGE_SIZE 200 // 200 is MAX. in paged queries (and default)
-#define MATTERMOST_HISTORY_PAGE_SIZE 60 // 200 is MAX in paged queries (60 is default)
+#define MATTERMOST_HISTORY_PAGE_SIZE 60 // 200 is MAX in paged queries (60 is default) also used to fetch last 60 messages for a new channel
 #define MATTERMOST_MAX_PAGES 10 // that is 2000 users or posts in paged queries
+
+#define MATTERMOST_NEW_CHANNEL_FOUND -2 // -2 indicates that timestamp does not exist for a new channel
 
 #define MATTERMOST_DEFAULT_SERVER ""
 #define MATTERMOST_SERVER_SPLIT_CHAR '|'
