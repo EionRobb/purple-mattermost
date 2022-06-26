@@ -1485,7 +1485,7 @@ mm_me_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	gboolean gitlabauth = FALSE;
 
 	if (node == NULL) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("Invalid or expired Gitlab cookie"));
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Bad me response"));
 		return;
 	}
 
@@ -1588,7 +1588,7 @@ mm_login_response(MattermostAccount *ma, JsonNode *node, gpointer user_data)
 	JsonObject *response;
 
 	if (node == NULL) {
-		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_AUTHENTICATION_FAILED, _("Bad username/password"));
+		purple_connection_error(ma->pc, PURPLE_CONNECTION_ERROR_NETWORK_ERROR, _("Bad login response"));
 		return;
 	}
 
