@@ -181,6 +181,8 @@ typedef struct {
 	GHashTable *teams_display_names; // an descriptive names too.
 	GHashTable *channel_teams;    // A list of channel_id -> team_id to know what team a channel is in
 	GQueue *received_message_queue; // A store of the last 10 received message id's for de-dup
+
+	GQueue *message_cache;        // A store of the message for comments preambule
 	
 	GList *user_prefs;            // all user preferences read from server
 	GList *joined_channels;       // all channels for which we performed mm_join_room and have not left;
