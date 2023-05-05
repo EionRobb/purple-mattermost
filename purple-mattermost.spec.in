@@ -16,6 +16,8 @@ Source0:        https://github.com/EionRobb/purple-mattermost/archive/v%{version
 BuildRequires:  json-glib-devel >= 1.0.2
 BuildRequires:  libmarkdown-devel >= 2.1.8
 BuildRequires:  libpurple-devel >= 2.10.7
+BuildRequires:  zlib-devel
+BuildRequires:  git
 
 %description
 A third-party plugin for the Pidgin multi-protocol instant messenger.
